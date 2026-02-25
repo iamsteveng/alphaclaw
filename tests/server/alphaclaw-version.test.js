@@ -4,7 +4,7 @@ const path = require("path");
 const https = require("https");
 const { EventEmitter } = require("events");
 
-const { kPackageRoot } = require("../../lib/server/constants");
+const { kPackageRoot, kRootDir } = require("../../lib/server/constants");
 const modulePath = require.resolve("../../lib/server/alphaclaw-version");
 const originalExec = childProcess.exec;
 const originalHttpsGet = https.get;
@@ -126,5 +126,28 @@ describe("server/alphaclaw-version", () => {
     expect(result.status).toBe(500);
     expect(result.body.ok).toBe(false);
     expect(result.body.error).toContain("npm ERR!");
+  });
+
+  it("writes update marker to kRootDir on successful update", async () => {
+    const execMock = vi.fn().mockImplementation((cmd, opts, callback) => {
+      callback(null, "added 1 package", "");
+    });
+    const writeSpy = vi.spyOn(fs, "writeFileSync");
+    const { createAlphaclawVersionService } = loadVersionModule({ execMock });
+    const service = createAlphaclawVersionService();
+
+    const result = await service.updateAlphaclaw();
+
+    expect(result.status).toBe(200);
+    const markerPath = path.join(kRootDir, ".alphaclaw-update-pending");
+    const markerCall = writeSpy.mock.calls.find(
+      (call) => call[0] === markerPath,
+    );
+    expect(markerCall).toBeTruthy();
+    const markerData = JSON.parse(markerCall[1]);
+    expect(markerData).toHaveProperty("from");
+    expect(markerData).toHaveProperty("ts");
+
+    writeSpy.mockRestore();
   });
 });

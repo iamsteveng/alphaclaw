@@ -67,6 +67,30 @@ const openclawDir = path.join(rootDir, ".openclaw");
 fs.mkdirSync(openclawDir, { recursive: true });
 console.log(`[alphaclaw] Root directory: ${rootDir}`);
 
+// Check for pending update marker (written by the update endpoint before restart).
+// In environments where the container filesystem is ephemeral (Railway, etc.),
+// the npm install from the update endpoint is lost on restart. This re-runs it
+// from the fresh container using the persistent volume marker.
+const pendingUpdateMarker = path.join(rootDir, ".alphaclaw-update-pending");
+if (fs.existsSync(pendingUpdateMarker)) {
+  console.log("[alphaclaw] Pending update detected, installing @chrysb/alphaclaw@latest...");
+  const alphaPkgRoot = path.resolve(__dirname, "..");
+  const nmIndex = alphaPkgRoot.lastIndexOf(`${path.sep}node_modules${path.sep}`);
+  const installDir = nmIndex >= 0 ? alphaPkgRoot.slice(0, nmIndex) : alphaPkgRoot;
+  try {
+    execSync("npm install @chrysb/alphaclaw@latest --omit=dev --prefer-online", {
+      cwd: installDir,
+      stdio: "inherit",
+      timeout: 180000,
+    });
+    fs.unlinkSync(pendingUpdateMarker);
+    console.log("[alphaclaw] Update applied successfully");
+  } catch (e) {
+    console.log(`[alphaclaw] Update install failed: ${e.message}`);
+    fs.unlinkSync(pendingUpdateMarker);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 3. Symlink ~/.openclaw -> <root>/.openclaw
 // ---------------------------------------------------------------------------
