@@ -252,13 +252,17 @@ const runGitSync = () => {
   }
 
   const originUrl = `https://github.com/${githubRepo}.git`;
-  const branch =
-    String(
-      execSync("git rev-parse --abbrev-ref HEAD", {
-        cwd: openclawDir,
-        encoding: "utf8",
-      }),
-    ).trim() || "main";
+  let branch = "main";
+  try {
+    branch =
+      String(
+        execSync("git symbolic-ref --short HEAD", {
+          cwd: openclawDir,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        }),
+      ).trim() || "main";
+  } catch {}
   const askPassPath = path.join(
     os.tmpdir(),
     `alphaclaw-git-askpass-${process.pid}.sh`,
@@ -294,6 +298,8 @@ const runGitSync = () => {
     );
 
     runGit(`remote set-url origin ${quoteArg(originUrl)}`);
+    runGit(`config user.name ${quoteArg("AlphaClaw Agent")}`);
+    runGit(`config user.email ${quoteArg("agent@alphaclaw.md")}`);
     try {
       runGit(`ls-remote --exit-code --heads origin ${quoteArg(branch)}`, {
         withAuth: true,
@@ -316,6 +322,9 @@ const runGitSync = () => {
     runGit(`push origin ${quoteArg(branch)}`, { withAuth: true });
     const hash = String(runGit("rev-parse --short HEAD")).trim();
     console.log(`[alphaclaw] Git sync complete (${hash})`);
+    console.log(
+      `[alphaclaw] Commit URL: https://github.com/${githubRepo}/commit/${hash}`,
+    );
     return 0;
   } catch (e) {
     const details = String(e.stderr || e.stdout || e.message || "").trim();

@@ -4,6 +4,8 @@
 # Whitelist specific files/dirs.
 !workspace/
 !workspace/**
+workspace/.openclaw/
+workspace/.openclaw/**
 !skills/
 !skills/**
 !cron/
