@@ -31,3 +31,58 @@ Use workspace-relative paths only for local files (no absolute paths). Include a
 Changes committed ([abc1234](commit url)): <-- linked commit hash
 • path/or/resource (new|edit|delete) — brief description
 ```
+
+### UI Conventions
+
+Use these conventions for all UI work under `lib/public/js` and `lib/public/css`.
+
+#### Component structure
+
+- Use arrow-function components and helpers.
+- Prefer shared components over one-off markup when a pattern already exists.
+- Keep constants in `kName` format (e.g. `kUiTabs`, `kGroupOrder`, `kNamePattern`).
+- Keep component-level helpers near the top of the file, before the main export.
+
+#### Rendering and composition
+
+- Use the `htm` + `preact` pattern:
+  - `const html = htm.bind(h);`
+  - return `html\`...\``
+- Prefer early return for hidden states (e.g. `if (!visible) return null;`).
+- Use `<PageHeader />` for tab/page headers that need a title and right-side actions.
+- Use card shells consistently: `bg-surface border border-border rounded-xl`.
+
+#### Buttons
+
+- Primary actions: `ac-btn-cyan`
+- Secondary actions: `ac-btn-secondary`
+- Positive/success actions: `ac-btn-green`
+- Use consistent disabled treatment: `opacity-50 cursor-not-allowed`.
+- Keep action sizing consistent (`text-xs px-3 py-1.5 rounded-lg` for compact controls unless there is a clear reason otherwise).
+- Prefer shared action components when available (`UpdateActionButton`, `ConfirmDialog`) before custom button logic.
+
+#### Dialogs and modals
+
+- Use `<ConfirmDialog />` for destructive/confirmation flows.
+- Modal overlay convention:
+  - `fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50`
+- Modal panel convention:
+  - `bg-modal border border-border rounded-xl p-5 ...`
+- Support close-on-overlay click and Escape key for dialogs.
+
+#### Inputs and forms
+
+- Reuse `<SecretInput />` for sensitive values and token/key inputs.
+- Base input look should remain consistent:
+  - `bg-black/30 border border-border rounded-lg ... focus:border-gray-500`
+- Preserve monospace for technical values (`font-mono`) and codes/paths.
+- Prefer inline helper text under fields (`text-xs text-gray-500/600`) for setup guidance.
+
+#### Feedback and state
+
+- Use `showToast(...)` for user-visible operation outcomes.
+- Keep loading/saving flags explicit in state (`saving`, `creating`, `restartingGateway`, etc.).
+- Use polling via `usePolling` for frequently refreshed backend-backed data.
+- For restart-required flows, render the standardized yellow restart banner style used in `providers`, `envars`, and `webhooks`.
+
+For inconsistencies tracking and DRY opportunities, see `lib/setup/core-prompts/UI-DRY-OPPORTUNITIES.md`.

@@ -11,6 +11,7 @@ AlphaClaw UI: `{{SETUP_UI_URL}}`
 | General   | `{{SETUP_UI_URL}}#general`   | Gateway status & restart, channel health (Telegram/Discord), pending pairings, feature health (Embeddings/Audio), Google Workspace connection, repo auto-sync schedule, OpenClaw dashboard |
 | Providers | `{{SETUP_UI_URL}}#providers` | AI provider credentials (Anthropic, OpenAI, Gemini, Mistral, Voyage, Groq, Deepgram), feature capabilities, Codex OAuth                                                                    |
 | Envars    | `{{SETUP_UI_URL}}#envars`    | View/edit/add environment variables (saved to `/data/.env`), gateway restart to apply changes                                                                                              |
+| Webhooks  | `{{SETUP_UI_URL}}#webhooks`  | Webhook endpoint visibility, create flow, request history, and gateway delivery debugging                                                                                                  |
 
 ### Environment variables
 
@@ -34,3 +35,15 @@ After pushing, include a link to the commit using the abbreviated hash: [abc1234
 ## Telegram Formatting
 
 - **Links:** Use markdown syntax `[text](URL)` — HTML `<a href>` does NOT render
+
+## Webhooks
+
+You can create webhooks yourself or the user can create them through the Setup UI.
+
+Webhook transform files must follow this convention:
+
+- Path: hooks/transforms/{hook-name}/{hook-name}-transform.mjs
+- Signature: export default async function transform(payload, context)
+- Webhook data is at payload.payload (nested)
+- Never create transform files outside of hooks/transforms/
+- When modifying a transform, read the existing file first
