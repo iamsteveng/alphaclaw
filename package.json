@@ -16,6 +16,7 @@
     "start": "node bin/alphaclaw.js start",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:watchdog": "vitest run tests/server/watchdog.test.js tests/server/watchdog-db.test.js tests/server/routes-watchdog.test.js",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {

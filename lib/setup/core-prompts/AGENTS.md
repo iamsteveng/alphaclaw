@@ -32,6 +32,25 @@ Changes committed ([abc1234](commit url)): <-- linked commit hash
 • path/or/resource (new|edit|delete) — brief description
 ```
 
+### Telegram Notice Format (AlphaClaw)
+
+Use this format for any Telegram notices sent from AlphaClaw services (watchdog, system alerts, repair notices):
+
+1. Header line (Markdown): `🐺 *AlphaClaw Watchdog*`
+2. Headline line (simple, no `Status:` prefix):
+   - `🔴 Crash loop detected`
+   - `🔴 Crash loop detected, auto-repairing...`
+   - `🟡 Auto-repair started, awaiting health check`
+   - `🟢 Auto-repair complete, gateway healthy`
+   - `🟢 Gateway healthy again`
+   - `🔴 Auto-repair failed`
+3. Append a markdown link to the headline when URL is available:
+   - `... - [View logs](<full-url>/#/watchdog)`
+4. Optional context lines like `Trigger: ...`, `Attempt count: ...`
+5. For values with underscores or special characters (for example `crash_loop`), wrap the value in backticks:
+   - `Trigger: \`crash_loop\``
+6. Do not use HTML tags (`<b>`, `<a href>`) for Telegram watchdog notices.
+
 ### UI Conventions
 
 Use these conventions for all UI work under `lib/public/js` and `lib/public/css`.
