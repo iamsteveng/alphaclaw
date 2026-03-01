@@ -5,6 +5,15 @@
     "access": "public"
   },
   "description": "Setup UI, gateway manager, and onboarding wrapper for OpenClaw",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chrysb/alphaclaw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chrysb/alphaclaw/issues"
+  },
+  "homepage": "https://github.com/chrysb/alphaclaw#readme",
+  "license": "MIT",
   "bin": {
     "alphaclaw": "bin/alphaclaw.js"
   },
