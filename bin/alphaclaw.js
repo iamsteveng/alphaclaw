@@ -660,6 +660,85 @@ if (fs.existsSync(configPath)) {
         console.log("[alphaclaw] Scrubbed tokenized GitHub remote URL");
       }
     } catch {}
+
+    const bootRestoreConfigFromRemote = () => {
+      const branch = (() => {
+        try {
+          return (
+            String(
+              execSync("git symbolic-ref --short HEAD", {
+                cwd: openclawDir,
+                stdio: ["ignore", "pipe", "ignore"],
+                encoding: "utf8",
+              }),
+            ).trim() || "main"
+          );
+        } catch {
+          return "main";
+        }
+      })();
+      const githubToken = String(process.env.GITHUB_TOKEN || "").trim();
+      const gitEnv = { ...process.env };
+      const askPassPath = path.join(
+        os.tmpdir(),
+        `alphaclaw-boot-git-askpass-${process.pid}.sh`,
+      );
+      try {
+        if (githubToken) {
+          fs.writeFileSync(
+            askPassPath,
+            [
+              "#!/usr/bin/env sh",
+              'case "$1" in',
+              '  *Username*) echo "x-access-token" ;;',
+              '  *Password*) echo "${GITHUB_TOKEN:-}" ;;',
+              '  *) echo "" ;;',
+              "esac",
+              "",
+            ].join("\n"),
+            { mode: 0o700 },
+          );
+          gitEnv.GITHUB_TOKEN = githubToken;
+          gitEnv.GIT_TERMINAL_PROMPT = "0";
+          gitEnv.GIT_ASKPASS = askPassPath;
+        }
+        execSync(`git ls-remote --exit-code --heads origin "${branch}"`, {
+          cwd: openclawDir,
+          stdio: "ignore",
+          env: gitEnv,
+        });
+        execSync(`git fetch --quiet origin "${branch}"`, {
+          cwd: openclawDir,
+          stdio: "ignore",
+          env: gitEnv,
+        });
+        const remoteConfig = String(
+          execSync(`git show "origin/${branch}:openclaw.json"`, {
+            cwd: openclawDir,
+            stdio: ["ignore", "pipe", "ignore"],
+            encoding: "utf8",
+            env: gitEnv,
+          }),
+        );
+        if (remoteConfig.trim()) {
+          fs.writeFileSync(configPath, remoteConfig);
+          console.log(
+            `[alphaclaw] Restored openclaw.json from origin/${branch}`,
+          );
+        }
+      } catch (e) {
+        console.log(
+          `[alphaclaw] Remote config restore skipped: ${String(e.message || "").slice(0, 200)}`,
+        );
+      } finally {
+        if (githubToken) {
+          try {
+            fs.rmSync(askPassPath, { force: true });
+          } catch {}
+        }
+      }
+    };
+    bootRestoreConfigFromRemote();
   }
 
   try {
