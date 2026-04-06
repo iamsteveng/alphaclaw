@@ -17,6 +17,11 @@ const {
   applyPendingAlphaclawUpdate,
 } = require("../lib/server/pending-alphaclaw-update");
 const {
+  getManagedAlphaclawCliPath,
+  getManagedAlphaclawRuntimeDir,
+  syncManagedAlphaclawRuntimeWithBundled,
+} = require("../lib/server/alphaclaw-runtime");
+const {
   applyPendingOpenclawUpdate,
 } = require("../lib/server/pending-openclaw-update");
 const {
@@ -173,9 +178,88 @@ if (portFlag) {
   process.env.PORT = portFlag;
 }
 
+const kManagedAlphaclawRuntimeEnvFlag = "ALPHACLAW_MANAGED_RUNTIME_ACTIVE";
+const shouldBootstrapManagedAlphaclawRuntime =
+  command === "start" &&
+  process.env[kManagedAlphaclawRuntimeEnvFlag] !== "1";
+
 // ---------------------------------------------------------------------------
 // 2. Create directory structure
 // ---------------------------------------------------------------------------
+
+if (shouldBootstrapManagedAlphaclawRuntime) {
+  const { spawn } = require("child_process");
+  const managedAlphaclawRuntimeDir = getManagedAlphaclawRuntimeDir({ rootDir });
+  const pendingUpdateMarker = path.join(rootDir, ".alphaclaw-update-pending");
+  if (fs.existsSync(pendingUpdateMarker)) {
+    applyPendingAlphaclawUpdate({
+      execSyncImpl: execSync,
+      fsModule: fs,
+      installDir: managedAlphaclawRuntimeDir,
+      logger: console,
+      markerPath: pendingUpdateMarker,
+    });
+  }
+  try {
+    syncManagedAlphaclawRuntimeWithBundled({
+      execSyncImpl: execSync,
+      fsModule: fs,
+      logger: console,
+      runtimeDir: managedAlphaclawRuntimeDir,
+    });
+  } catch (error) {
+    console.log(
+      `[alphaclaw] Could not sync managed AlphaClaw runtime from bundled install: ${error.message}`,
+    );
+  }
+
+  const managedAlphaclawCliPath = getManagedAlphaclawCliPath({
+    runtimeDir: managedAlphaclawRuntimeDir,
+  });
+  if (!fs.existsSync(managedAlphaclawCliPath)) {
+    console.error(
+      `[alphaclaw] Managed AlphaClaw runtime missing CLI at ${managedAlphaclawCliPath}`,
+    );
+    process.exit(1);
+  }
+
+  const runtimeChild = spawn(
+    process.argv[0],
+    [managedAlphaclawCliPath, ...process.argv.slice(2)],
+    {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        [kManagedAlphaclawRuntimeEnvFlag]: "1",
+        ALPHACLAW_BOOTSTRAP_CLI_PATH: __filename,
+      },
+    },
+  );
+
+  const forwardSignal = (signal) => {
+    if (runtimeChild.exitCode === null && !runtimeChild.killed) {
+      runtimeChild.kill(signal);
+    }
+  };
+
+  process.on("SIGTERM", () => forwardSignal("SIGTERM"));
+  process.on("SIGINT", () => forwardSignal("SIGINT"));
+
+  runtimeChild.on("error", (error) => {
+    console.error(
+      `[alphaclaw] Managed AlphaClaw runtime launch failed: ${error.message}`,
+    );
+    process.exit(1);
+  });
+
+  runtimeChild.on("exit", (code, signal) => {
+    if (signal) {
+      process.kill(process.pid, signal);
+      return;
+    }
+    process.exit(Number.isInteger(code) ? code : 0);
+  });
+} else {
 
 const openclawDir = path.join(rootDir, ".openclaw");
 fs.mkdirSync(openclawDir, { recursive: true });
@@ -952,3 +1036,4 @@ try {
 
 console.log("[alphaclaw] Setup complete -- starting server");
 require("../lib/server.js");
+}
