@@ -200,6 +200,53 @@ describe("server/alphaclaw-runtime", () => {
     );
   });
 
+  it("copies the bundled node_modules tree when seeding a missing runtime from an installed app", () => {
+    const runtimeDir = getManagedAlphaclawRuntimeDir({ rootDir: tmpDir });
+    const installRoot = path.join(tmpDir, "install");
+    const bundleDir = path.join(
+      installRoot,
+      "node_modules",
+      "@chrysb",
+      "alphaclaw",
+    );
+    const packageJsonPath = path.join(bundleDir, "package.json");
+    writeAlphaclawPackage({
+      packageRoot: bundleDir,
+      version: "0.8.9",
+    });
+    fs.mkdirSync(path.join(installRoot, "node_modules", "openclaw"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(installRoot, "node_modules", "openclaw", "package.json"),
+      JSON.stringify({ name: "openclaw", version: "2026.4.1" }),
+    );
+    const execSyncImpl = vi.fn();
+
+    const result = syncManagedAlphaclawRuntimeWithBundled({
+      execSyncImpl,
+      fsModule: fs,
+      logger: { log: vi.fn() },
+      runtimeDir,
+      packageRoot: bundleDir,
+      packageJsonPath,
+    });
+
+    expect(result).toEqual({
+      checked: true,
+      synced: true,
+      bundledVersion: "0.8.9",
+      runtimeVersion: "0.8.9",
+    });
+    expect(execSyncImpl).not.toHaveBeenCalled();
+    expect(fs.existsSync(getManagedAlphaclawCliPath({ runtimeDir }))).toBe(true);
+    expect(
+      fs.existsSync(
+        path.join(runtimeDir, "node_modules", "openclaw", "package.json"),
+      ),
+    ).toBe(true);
+  });
+
   it("refreshes the managed runtime when bundled contents change without a version bump", () => {
     const runtimeDir = getManagedAlphaclawRuntimeDir({ rootDir: tmpDir });
     const bundleDir = path.join(tmpDir, "bundle");
