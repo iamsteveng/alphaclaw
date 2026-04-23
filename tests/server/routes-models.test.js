@@ -153,6 +153,36 @@ describe("server/routes/models", () => {
     });
   });
 
+  it("recovers model status payload from failed command output", async () => {
+    const deps = createModelDeps();
+    const err = new Error("plugin load failed");
+    err.stdout =
+      'prefix\n{"resolvedDefault":"openai/gpt-5.1-codex","fallbacks":["anthropic/claude-opus-4-6"],"imageModel":"google/gemini-3.1-pro-preview"}\n';
+    err.stderr =
+      '[plugins] google failed to load from /app/node_modules/openclaw/dist/extensions/google/index.js';
+    deps.shellCmd.mockRejectedValue(err);
+    deps.parseJsonFromNoisyOutput.mockImplementation((raw) =>
+      String(raw).includes("resolvedDefault")
+        ? {
+            resolvedDefault: "openai/gpt-5.1-codex",
+            fallbacks: ["anthropic/claude-opus-4-6"],
+            imageModel: "google/gemini-3.1-pro-preview",
+          }
+        : null,
+    );
+    const app = createApp(deps);
+
+    const res = await request(app).get("/api/models/status");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      modelKey: "openai/gpt-5.1-codex",
+      fallbacks: ["anthropic/claude-opus-4-6"],
+      imageModel: "google/gemini-3.1-pro-preview",
+    });
+  });
+
   it("validates modelKey on POST /api/models/set", async () => {
     const deps = createModelDeps();
     const app = createApp(deps);

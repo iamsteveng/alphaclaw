@@ -256,6 +256,56 @@ describe("server/model-catalog-cache", () => {
     });
   });
 
+  it("recovers model catalog JSON from failed command output", async () => {
+    const tempRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), "alphaclaw-model-catalog-recover-"),
+    );
+    const cachePath = path.join(tempRoot, "cache", "model-catalog.json");
+    const err = new Error("plugin load failed");
+    err.stdout =
+      'prefix\n{"models":[{"key":"anthropic/claude-opus-4-7","name":"Claude Opus 4.7"}]}\n';
+    err.stderr =
+      '[plugins] google failed to load from /app/node_modules/openclaw/dist/extensions/google/index.js';
+    const shellCmd = vi.fn().mockRejectedValue(err);
+    const parseJsonFromNoisyOutput = vi.fn((raw) =>
+      String(raw).includes('"models"')
+        ? {
+            models: [
+              {
+                key: "anthropic/claude-opus-4-7",
+                name: "Claude Opus 4.7",
+              },
+            ],
+          }
+        : null,
+    );
+    const logger = { error: vi.fn(), warn: vi.fn() };
+    const cache = createModelCatalogCache({
+      cachePath,
+      shellCmd,
+      parseJsonFromNoisyOutput,
+      normalizeOnboardingModels: normalizeModels,
+      readOpenclawVersion: vi.fn(() => "2026.4.20"),
+      logger,
+    });
+
+    const response = await cache.getCatalogResponse();
+
+    expect(response).toEqual({
+      ok: true,
+      source: "openclaw",
+      fetchedAt: expect.any(Number),
+      stale: false,
+      refreshing: false,
+      models: normalizeModels([
+        { key: "anthropic/claude-opus-4-7", name: "Claude Opus 4.7" },
+      ]),
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Recovered model catalog from failed command output"),
+    );
+  });
+
   it("falls back when no cache exists and the CLI load fails", async () => {
     const tempRoot = fs.mkdtempSync(
       path.join(os.tmpdir(), "alphaclaw-model-catalog-fallback-"),

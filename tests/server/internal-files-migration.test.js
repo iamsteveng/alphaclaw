@@ -54,6 +54,22 @@ describe("server/internal-files-migration", () => {
     );
   });
 
+  it("appends cron jobs-state gitignore entries when missing", () => {
+    const openclawDir = createTempOpenclawDir();
+    const gitignorePath = path.join(openclawDir, ".gitignore");
+    fs.writeFileSync(gitignorePath, "*\n!cron/\n!cron/jobs.json\n", "utf8");
+
+    migrateManagedInternalFiles({
+      fs,
+      openclawDir,
+      logger: { error: vi.fn() },
+    });
+
+    const next = fs.readFileSync(gitignorePath, "utf8");
+    expect(next).toContain("cron/jobs-state.json");
+    expect(next).toContain("!hooks/");
+  });
+
   it("is idempotent across repeated runs", () => {
     const openclawDir = createTempOpenclawDir();
     fs.writeFileSync(path.join(openclawDir, "hourly-git-sync.sh"), "echo script\n", "utf8");

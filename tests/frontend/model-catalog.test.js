@@ -34,10 +34,11 @@ describe("frontend/model-catalog", () => {
       getInitialOnboardingModelKey({
         catalog: [
           { key: "openai-codex/gpt-5.4", label: "GPT-5.4" },
+          { key: "anthropic/claude-opus-4-7", label: "Opus 4.7" },
           { key: "anthropic/claude-opus-4-6", label: "Opus 4.6" },
         ],
       }),
-    ).toBe("anthropic/claude-opus-4-6");
+    ).toBe("anthropic/claude-opus-4-7");
   });
 
   it("reports whether the catalog is still refreshing", async () => {
