@@ -61,6 +61,87 @@ The frontend uses Preact with `htm` (tagged template literals, no build-time JSX
 - The `authProfiles` object (from `auth-profiles.js`) is injected into route modules that need to read/write OAuth credentials.
 - File-based state (auth state, credentials) lives under `ALPHACLAW_ROOT_DIR`; DB-backed state lives in `lib/server/db/`.
 
+## Local Container Testing
+
+The production-close local dev environment lives in a sibling project at `../openclaw-railway-template/`. It runs the same Docker image and entrypoint as Railway, with the local `alpha-claw/src/` volume-mounted over the installed npm package for fast iteration.
+
+**First-time setup (one-time):**
+```bash
+cd ../openclaw-railway-template
+# Pull API keys + config from the live Railway deployment into data-seed/.env
+# then seed the Docker volume and start:
+npm run dev:seed   # copies data-seed/.env into the Docker volume
+npm run dev        # builds image and starts container on port 3001
+# Visit http://localhost:3001 and complete the setup wizard
+```
+
+**Daily dev loop:**
+```bash
+cd ../openclaw-railway-template
+npm run dev          # start (skips rebuild if image exists, use --build to force)
+npm run dev:restart  # pick up server-side changes in alpha-claw/src (~2s, no rebuild)
+npm run dev:logs     # tail full logs (nothing filtered)
+npm run dev:shell    # bash into the running container
+```
+
+**Credentials for local instance:**
+- Dashboard: http://localhost:3001, password `62875094`
+- Telegram bot: `@alphaclaw_dev_bot` (paired to user 7374876027)
+- Model: `deepseek/deepseek-v4-pro`
+- Workspace repo: `iamsteveng/openclaw-dev`
+
+**Port 3000 conflict:** `PORT=3001` is set in `openclaw-railway-template/.env` because port 3000 is occupied by another local service.
+
+**Known dev-only quirk:** `usage-tracker` plugin is blocked (uid=1000 vs root) — harmless, only affects that plugin.
+
+**Syncing model API key and primary model from the Railway instance:**
+```bash
+RAILWAY_URL="https://openclaw-railway-template-production-a7f6.up.railway.app"
+
+# 1. Login to Railway alphaclaw to pull keys
+curl -s -c /tmp/railway-cookies.txt -X POST "$RAILWAY_URL/api/auth/login" \
+  -H "Content-Type: application/json" -d '{"password":"62875094"}'
+
+# 2. Extract the key you want (e.g. DEEPSEEK_API_KEY)
+KEY=$(curl -s -b /tmp/railway-cookies.txt "$RAILWAY_URL/api/env" | \
+  python3 -c "import json,sys; [print(v['value']) for v in json.load(sys.stdin)['vars'] if v['key']=='DEEPSEEK_API_KEY']")
+
+# 3. Set it in the local instance
+curl -s -b /tmp/alphaclaw-cookies.txt -X PUT http://localhost:3001/api/env \
+  -H "Content-Type: application/json" \
+  -d "{\"vars\":[{\"key\":\"DEEPSEEK_API_KEY\",\"value\":\"$KEY\"}]}"
+
+# 4. Get primary model from Railway
+MODEL=$(curl -s -b /tmp/railway-cookies.txt "$RAILWAY_URL/api/models/status" | \
+  python3 -c "import json,sys; print(json.load(sys.stdin)['modelKey'])")
+
+# 5. Set it locally
+curl -s -b /tmp/alphaclaw-cookies.txt -X POST http://localhost:3001/api/models/set \
+  -H "Content-Type: application/json" -d "{\"modelKey\":\"$MODEL\"}"
+
+# 6. Restart container to apply env change + reload gateway with new model
+cd ../openclaw-railway-template && npm run dev:restart
+```
+
+**Sending a test message to the main agent via API:**
+```bash
+# Login first to get session cookie
+curl -s -c /tmp/alphaclaw-cookies.txt -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" -d '{"password":"62875094"}'
+# Send message
+curl -s -b /tmp/alphaclaw-cookies.txt -X POST http://localhost:3001/api/agent/message \
+  -H "Content-Type: application/json" \
+  -d '{"message":"your message here","sessionKey":"agent:main:main"}'
+```
+
+**Approving a Telegram pairing request:**
+Use the pairings API (not the CLI — the CLI can't see the gateway's in-memory state):
+```bash
+curl -s -b /tmp/alphaclaw-cookies.txt http://localhost:3001/api/pairings   # list pending
+curl -s -b /tmp/alphaclaw-cookies.txt -X POST http://localhost:3001/api/pairings/<id>/approve \
+  -H "Content-Type: application/json" -d '{}'
+```
+
 ## Deploying to Railway
 
 Railway deploys directly from this GitHub repo. There is no build step on Railway — it runs `npm start` which calls `node bin/alphaclaw.js start`. The UI bundle (`lib/public/dist/app.bundle.js`) and generated CSS must be **committed to git** before pushing, otherwise Railway serves the old bundle.
