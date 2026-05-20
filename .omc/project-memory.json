@@ -1,0 +1,243 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1778975051238,
+  "projectRoot": "/home/ubuntu/.openclaw/workspace/alpha-claw/src",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": ">=22.14.0",
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "express",
+        "version": "4.21.0",
+        "category": "backend"
+      },
+      {
+        "name": "esbuild",
+        "version": "0.25.9",
+        "category": "build"
+      },
+      {
+        "name": "preact",
+        "version": "10.27.2",
+        "category": "frontend"
+      },
+      {
+        "name": "vitest",
+        "version": "4.0.18",
+        "category": "testing"
+      }
+    ],
+    "packageManager": "pnpm",
+    "runtime": "Node.js 22.14.0"
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": "pnpm test",
+    "lintCommand": null,
+    "devCommand": "pnpm start",
+    "scripts": {
+      "start": "node bin/alphaclaw.js start",
+      "build:ui": "node scripts/build-ui.mjs",
+      "test": "vitest run",
+      "test:watch": "vitest",
+      "test:watchdog": "vitest run tests/server/watchdog.test.js tests/server/watchdog-db.test.js tests/server/routes-watchdog.test.js",
+      "test:coverage": "vitest run --coverage",
+      "prepack": "npm run build:ui"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "bin",
+      "lib",
+      "scripts",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "bin": {
+      "path": "bin",
+      "purpose": "Executable scripts",
+      "fileCount": 1,
+      "lastAccessed": 1778975051203,
+      "keyFiles": [
+        "alphaclaw.js"
+      ]
+    },
+    "lib": {
+      "path": "lib",
+      "purpose": "Library code",
+      "fileCount": 1,
+      "lastAccessed": 1778975051205,
+      "keyFiles": [
+        "server.js"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 1,
+      "lastAccessed": 1778975051219,
+      "keyFiles": [
+        "build-ui.mjs"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 0,
+      "lastAccessed": 1778975051229,
+      "keyFiles": []
+    },
+    "lib/public": {
+      "path": "lib/public",
+      "purpose": "Public files",
+      "fileCount": 2,
+      "lastAccessed": 1778975051230,
+      "keyFiles": [
+        "login.html",
+        "setup.html"
+      ]
+    },
+    "lib/scripts": {
+      "path": "lib/scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 3,
+      "lastAccessed": 1778975051230,
+      "keyFiles": [
+        "git",
+        "git-askpass",
+        "systemctl"
+      ]
+    },
+    "tests/bin": {
+      "path": "tests/bin",
+      "purpose": "Executable scripts",
+      "fileCount": 2,
+      "lastAccessed": 1778975051231,
+      "keyFiles": [
+        "alphaclaw.test.js",
+        "openclaw-config-restore.test.js"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "lib/server/routes/x-list-ingest.js",
+      "accessCount": 8,
+      "lastAccessed": 1779024254030,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/startup.js",
+      "accessCount": 6,
+      "lastAccessed": 1778984056887,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/cron-service.js",
+      "accessCount": 5,
+      "lastAccessed": 1778979054082,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/routes/pairings.js",
+      "accessCount": 5,
+      "lastAccessed": 1778980426161,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/init/register-server-routes.js",
+      "accessCount": 5,
+      "lastAccessed": 1778984047404,
+      "type": "file"
+    },
+    {
+      "path": "lib/server.js",
+      "accessCount": 5,
+      "lastAccessed": 1778984258265,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/chat-ws.js",
+      "accessCount": 4,
+      "lastAccessed": 1778983785335,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/init/server-lifecycle.js",
+      "accessCount": 4,
+      "lastAccessed": 1778984066935,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/commands.js",
+      "accessCount": 2,
+      "lastAccessed": 1778979077406,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/gateway.js",
+      "accessCount": 2,
+      "lastAccessed": 1778979086147,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/openclaw-runtime-env.js",
+      "accessCount": 2,
+      "lastAccessed": 1778979239836,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/routes/nodes.js",
+      "accessCount": 1,
+      "lastAccessed": 1778975155387,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/routes/cron.js",
+      "accessCount": 1,
+      "lastAccessed": 1778979019751,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/onboarding/openclaw.js",
+      "accessCount": 1,
+      "lastAccessed": 1778979321052,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/cli-device-admin.js",
+      "accessCount": 1,
+      "lastAccessed": 1778980508536,
+      "type": "file"
+    },
+    {
+      "path": "lib/server/gateway-rpc.js",
+      "accessCount": 1,
+      "lastAccessed": 1778983935088,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
