@@ -163,6 +163,46 @@ Railway deploys directly from this GitHub repo. There is no build step on Railwa
 
 **Note:** Railway's Trial plan can cause OOM crashes — Hobby plan (8 GB RAM) is required for stable operation.
 
+## Adding OpenClaw Workspace Skills
+
+AlphaClaw can bundle agent skills that are automatically seeded into the OpenClaw workspace on every startup. These appear to the agent as `openclaw-workspace` skills.
+
+**How it works:**
+1. Place the skill directory under `lib/setup/skills/<skill-name>/`
+2. `syncWorkspaceSkills` (called in `syncBootstrapPromptFiles`) copies all files to `workspace/skills/<skill-name>/` on every alphaclaw startup
+3. The OpenClaw gateway discovers the skill via `resolvePluginSkillDirs`, which scans `<workspaceDir>/skills/`
+4. The agent sees it in its `<available-skills>` context on new sessions
+
+**Required file:**
+```
+lib/setup/skills/<skill-name>/
+  SKILL.md          ← required: name + description frontmatter, usage instructions
+  <support files>   ← optional: scripts, references, etc.
+```
+
+`SKILL.md` frontmatter minimum:
+```yaml
+---
+name: my-skill-name
+description: One-line description the agent sees when deciding to invoke this skill.
+---
+```
+
+**Key gotchas learned the hard way:**
+- **Do NOT write symlinks into `~/.openclaw/plugin-skills/`** — the gateway fully owns that directory and resets it on startup. Any manually created symlinks will be wiped.
+- **`openclaw skills list` (CLI) vs gateway** — the CLI runs with `HOME=/root`, the gateway runs with `HOME=/data`. `openclaw skills list` from a shell won't show workspace skills; use `HOME=/data openclaw skills list` to see what the gateway sees.
+- **Existing sessions cache skills at session start** — after adding a new skill, the agent won't see it until a fresh session. Test with a new `openclaw agent --message "..."` call (no `--session-id`).
+- **TOOLS.md is for platform/integration docs only** — skill-specific docs belong in `SKILL.md`, not appended to `lib/setup/core-prompts/TOOLS.md`.
+
+**Verifying skill discovery:**
+```bash
+# From inside the container:
+HOME=/data openclaw skills list | grep <skill-name>
+
+# Test with fresh agent session:
+docker exec <container> openclaw agent --agent main --message "use my-skill-name"
+```
+
 ## Claude Code Authentication
 
 `claude setup-token` (run on the user's local machine) generates a `sk-ant-oat01-...` token — this is the primary recommended auth method for cloud deployments. The token is validated against `api.anthropic.com/v1/models` before storage.
