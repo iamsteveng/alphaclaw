@@ -1,9 +1,46 @@
 const {
+  shouldSkipSystemCronInstall,
+  resolveGitAskPassPath,
+  resolveGitShimPath,
   resolveRealGitPath,
   shouldRefreshHourlyGitSyncScript,
 } = require("../../lib/cli/git-runtime");
 
 describe("cli/git runtime helpers", () => {
+  it("honors the system cron install opt-out flag", () => {
+    expect(
+      shouldSkipSystemCronInstall({
+        env: { ALPHACLAW_SKIP_SYSTEM_CRON_INSTALL: "true" },
+      }),
+    ).toBe(true);
+    expect(
+      shouldSkipSystemCronInstall({
+        env: { ALPHACLAW_SKIP_SYSTEM_CRON_INSTALL: "0" },
+      }),
+    ).toBe(false);
+  });
+
+  it("resolves git helper paths from runtime environment", () => {
+    expect(
+      resolveGitAskPassPath({
+        env: { TMPDIR: "/runtime/tmp" },
+        tmpDir: "/fallback/tmp",
+      }),
+    ).toBe("/runtime/tmp/alphaclaw-git-askpass.sh");
+    expect(
+      resolveGitAskPassPath({
+        env: { ALPHACLAW_GIT_ASKPASS_PATH: "/state/git-askpass" },
+        tmpDir: "/fallback/tmp",
+      }),
+    ).toBe("/state/git-askpass");
+    expect(
+      resolveGitShimPath({
+        env: { ALPHACLAW_GIT_SHIM_PATH: "/state/bin/git" },
+      }),
+    ).toBe("/state/bin/git");
+    expect(resolveGitShimPath({ env: {} })).toBe("/usr/local/bin/git");
+  });
+
   it("resolves a real git path while skipping the installed shim", () => {
     const resolvedPath = resolveRealGitPath({
       shimPath: "/usr/local/bin/git",

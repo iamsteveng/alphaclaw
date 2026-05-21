@@ -157,6 +157,9 @@ The built-in watchdog monitors gateway health and recovers from failures automat
 | `WATCHDOG_NOTIFICATIONS_DISABLED` | Optional | Disable watchdog notifications (`true`/`false`)    |
 | `PORT`                            | Optional | Server port (default `3000`)                       |
 | `ALPHACLAW_ROOT_DIR`              | Optional | Data directory (default `/data`)                   |
+| `ALPHACLAW_SKIP_SYSTEM_CRON_INSTALL` | Optional | Skip writes to `/etc/cron.d` while keeping cron config (`true`/`false`) |
+| `ALPHACLAW_GIT_SHIM_PATH`         | Optional | Install the managed git auth shim at this path (default `/usr/local/bin/git`) |
+| `ALPHACLAW_GIT_ASKPASS_PATH`      | Optional | Install the git askpass helper at this path (default `$TMPDIR/alphaclaw-git-askpass.sh`) |
 | `TRUST_PROXY_HOPS`                | Optional | Trust proxy hop count for correct client IP        |
 
 ## Security Notes

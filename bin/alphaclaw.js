@@ -6,6 +6,9 @@ const os = require("os");
 const path = require("path");
 const { execSync } = require("child_process");
 const {
+  shouldSkipSystemCronInstall,
+  resolveGitAskPassPath,
+  resolveGitShimPath,
   normalizeGitSyncFilePath,
   validateGitSyncFilePath,
   resolveRealGitPath,
@@ -278,7 +281,7 @@ const runGitSync = () => {
   }
 
   const realGitPath = resolveRealGitPath({
-    shimPath: "/usr/local/bin/git",
+    shimPath: resolveGitShimPath({ env: process.env }),
   });
   if (!realGitPath) {
     console.error(
@@ -631,7 +634,11 @@ if (fs.existsSync(hourlyGitSyncPath)) {
     }
 
     const cronFilePath = "/etc/cron.d/openclaw-hourly-sync";
-    if (cronEnabled) {
+    if (shouldSkipSystemCronInstall({ env: process.env })) {
+      console.log(
+        "[alphaclaw] System cron setup skipped by ALPHACLAW_SKIP_SYSTEM_CRON_INSTALL",
+      );
+    } else if (cronEnabled) {
       const cronContent = [
         "SHELL=/bin/bash",
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -819,11 +826,15 @@ try {
 
 try {
   const gitAskPassSrc = path.join(__dirname, "..", "lib", "scripts", "git-askpass");
-  const gitAskPassDest = "/tmp/alphaclaw-git-askpass.sh";
+  const gitAskPassDest = resolveGitAskPassPath({
+    env: process.env,
+    tmpDir: os.tmpdir(),
+  });
   const gitShimTemplatePath = path.join(__dirname, "..", "lib", "scripts", "git");
-  const gitShimDest = "/usr/local/bin/git";
+  const gitShimDest = resolveGitShimPath({ env: process.env });
 
   if (fs.existsSync(gitAskPassSrc)) {
+    fs.mkdirSync(path.dirname(gitAskPassDest), { recursive: true });
     fs.copyFileSync(gitAskPassSrc, gitAskPassDest);
     fs.chmodSync(gitAskPassDest, 0o755);
   }
@@ -837,7 +848,9 @@ try {
     const gitShimTemplate = fs.readFileSync(gitShimTemplatePath, "utf8");
     const gitShimContent = gitShimTemplate
       .replace("@@REAL_GIT@@", realGitPath)
-      .replace("@@OPENCLAW_REPO_ROOT@@", openclawDir);
+      .replace("@@OPENCLAW_REPO_ROOT@@", openclawDir)
+      .replace("@@ASKPASS_PATH@@", gitAskPassDest);
+    fs.mkdirSync(path.dirname(gitShimDest), { recursive: true });
     fs.writeFileSync(gitShimDest, gitShimContent, { mode: 0o755 });
     console.log("[alphaclaw] git auth shim installed");
   }
