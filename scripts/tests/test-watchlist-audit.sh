@@ -35,6 +35,7 @@ cleanup() {
   gbrain delete plans/aapl 2>/dev/null || true
   gbrain delete twitter/post/test-audit 2>/dev/null || true
   gbrain delete watchlist/current 2>/dev/null || true
+  gbrain delete watchlist/last-run 2>/dev/null || true
   docker exec openclaw-railway-template-openclaw-1 rm -f "$PRICES_FILE" 2>/dev/null || true
   ac_remove_crons 2>/dev/null || true
 }
