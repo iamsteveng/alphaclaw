@@ -85,7 +85,7 @@ npm run dev:shell    # bash into the running container
 ```
 
 **Credentials for local instance:**
-- Dashboard: http://localhost:3001, password `62875094`
+- Dashboard: http://localhost:3001, password from `$SETUP_PASSWORD` in `openclaw-railway-template/.env`
 - Telegram bot: `@alphaclaw_dev_bot` (paired to user 7374876027)
 - Model: `deepseek/deepseek-v4-pro`
 - Workspace repo: `iamsteveng/openclaw-dev`
@@ -100,7 +100,7 @@ RAILWAY_URL="https://openclaw-railway-template-production-a7f6.up.railway.app"
 
 # 1. Login to Railway alphaclaw to pull keys
 curl -s -c /tmp/railway-cookies.txt -X POST "$RAILWAY_URL/api/auth/login" \
-  -H "Content-Type: application/json" -d '{"password":"62875094"}'
+  -H "Content-Type: application/json" -d "{\"password\":\"$SETUP_PASSWORD\"}"
 
 # 2. Extract the key you want (e.g. DEEPSEEK_API_KEY)
 KEY=$(curl -s -b /tmp/railway-cookies.txt "$RAILWAY_URL/api/env" | \
@@ -127,7 +127,7 @@ cd ../openclaw-railway-template && npm run dev:restart
 ```bash
 # Login first to get session cookie
 curl -s -c /tmp/alphaclaw-cookies.txt -X POST http://localhost:3001/api/auth/login \
-  -H "Content-Type: application/json" -d '{"password":"62875094"}'
+  -H "Content-Type: application/json" -d "{\"password\":\"$SETUP_PASSWORD\"}"
 # Send message
 curl -s -b /tmp/alphaclaw-cookies.txt -X POST http://localhost:3001/api/agent/message \
   -H "Content-Type: application/json" \

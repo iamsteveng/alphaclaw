@@ -2,7 +2,7 @@
 # Shared helpers for trading advisor integration tests.
 
 PORT="${PORT:-3001}"
-PASSWORD="${SETUP_PASSWORD:-62875094}"
+PASSWORD="${SETUP_PASSWORD:?SETUP_PASSWORD env var must be set}"
 AC_COOKIES="/tmp/ac-test7-cookies.txt"
 CONTAINER="${CONTAINER:-openclaw-railway-template-openclaw-1}"
 

@@ -6,7 +6,7 @@
 set -euo pipefail
 
 PORT="${PORT:-3001}"
-PASSWORD="${SETUP_PASSWORD:-62875094}"
+PASSWORD="${SETUP_PASSWORD:?SETUP_PASSWORD env var must be set}"
 COOKIES="/tmp/ac-test-cookies.txt"
 PASS=0; FAIL=0
 
