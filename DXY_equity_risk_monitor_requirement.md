@@ -626,3 +626,127 @@ DXY breakout = dollar strength signal
 
 DXY equity risk confirmed = dollar strength is already hurting risk assets
 ```
+
+---
+
+## 21. New SPY Sub-Signals (Experimental, Added June 2026)
+
+Two additional signals were added to the `$SPY` scoring model after backtesting five years of daily data (August 2021 – May 2026). Both target predicting a ≥5% SPY close drop within the next 20 trading days, optimised for F2 score (β=2, recall weighted 2× over precision).
+
+---
+
+### 21.1 SPY Intraday Reversal
+
+#### Motivation
+
+The June 3, 2026 case study showed that intraday distribution (market rallied but gave back most gains before close) is not captured by close-only scoring. A session where the S&P 500 makes a significant intraday high but closes near the low suggests sellers are active and buyers are not sustaining bids — a classic distribution pattern preceding a trend reversal.
+
+#### Signal Definition
+
+```text
+SPY_Intraday_Rev_Ratio = (SPY_High_today - SPY_Close_today) / ATR14
+
+Signal fires when: SPY_Intraday_Rev_Ratio ≥ 1.0
+```
+
+The ratio measures how much of the daily high-to-close range was given back, expressed as a multiple of the 14-day Average True Range. A value ≥ 1.0 means the close-to-high gap exceeds a full ATR — sellers dominated the session.
+
+#### Python Logic
+
+```python
+highs  = [x[1] for x in spy_ohlc]
+lows   = [x[2] for x in spy_ohlc]
+closes = [x[3] for x in spy_ohlc]
+atr14  = calc_atr14(highs, lows, closes)
+
+intraday_rev_ratio = (highs[-1] - closes[-1]) / atr14
+signal_intraday_reversal = intraday_rev_ratio >= 1.0
+```
+
+#### Score Contribution
+
+| Signal | Points |
+|--------|-------:|
+| SPY intraday reversal ≥ 1.0 × ATR14 | +1 |
+
+#### Backtest Results (5Y, target ≥5% drop in 20 days)
+
+| Metric | Value |
+|--------|-------|
+| Threshold | ≥ 1.0 × ATR14 |
+| Fire rate | ~9% of trading days |
+| True positive rate (recall) | 0.121 |
+| Precision | **0.250** (vs 0.196 base rate) |
+| F2 score | 0.135 |
+| Characteristic | High-confidence, low-frequency flag |
+
+Precision of 0.250 is the highest of all candidate signals tested, making this a reliable confirmation signal when it fires. Its low recall (12%) means it should be used alongside other signals, not as a standalone trigger.
+
+#### Data Requirement
+
+Requires SPY OHLC (high, low, close) over at least 15 trading days. Fetched automatically via Yahoo Finance in `yf-api` mode. In `browser-json` mode, include `"high"` and `"low"` fields in SPY rows; if absent, the signal is silently skipped.
+
+---
+
+### 21.2 IWM/SPY Breadth Divergence
+
+#### Motivation
+
+The June 3, 2026 case study showed that the Russell 2000 (IWM) fell -1.25% vs the S&P 500 (SPY) -0.74% — a 51 basis point underperformance. Small-cap underperformance relative to large-cap is a classic early risk-off rotation signal: when institutional investors reduce risk, they sell higher-beta small caps first while large-cap mega-stocks provide temporary cover for headline indices.
+
+#### Signal Definition
+
+```text
+IWM_SPY_Spread_5d = (IWM_5d_ROC - SPY_5d_ROC) × 100   (in percentage points)
+
+Signal fires when: IWM_SPY_Spread_5d < -0.5
+```
+
+The spread is computed as the difference in 5-day percentage returns between IWM and SPY. A negative value means IWM underperformed SPY over the past 5 trading days.
+
+#### Python Logic
+
+```python
+iwm_roc5 = (iwm_closes[-1] / iwm_closes[-6]) - 1
+spy_roc5 = (spy_closes[-1] / spy_closes[-6]) - 1
+
+iwm_spy_spread_5d = (iwm_roc5 - spy_roc5) * 100   # percentage points
+signal_breadth_divergence = iwm_spy_spread_5d < -0.5
+```
+
+#### Score Contribution
+
+| Signal | Points |
+|--------|-------:|
+| IWM 5d ROC < SPY 5d ROC − 0.5pp | +1 |
+
+#### Backtest Results (5Y, target ≥5% drop in 20 days)
+
+| Metric | Value |
+|--------|-------|
+| Threshold | IWM lags SPY by > 0.5 percentage points over 5 days |
+| Fire rate | ~41% of trading days |
+| True positive rate (recall) | 0.418 |
+| Precision | 0.198 |
+| F2 score | 0.342 |
+| Characteristic | Best recall of new signals; use as composite vote |
+
+The signal fires frequently (~41% of days) with moderate recall. Its primary value is as a composite confirmation input — when IWM breadth deterioration coincides with HYG weakness or VIX elevation, the combined signal is more reliable than any component alone.
+
+#### Data Requirement
+
+Requires IWM close data over at least 6 trading days. Fetched automatically via Yahoo Finance in `yf-api` mode. In `browser-json` mode, include an `"IWM"` key with close-only rows; if absent, the signal is silently skipped.
+
+---
+
+### 21.3 Signals Not Promoted
+
+The following candidates were tested at the same time but not added to the scoring model:
+
+| Candidate | Best F2 | Reason not promoted |
+|-----------|---------|---------------------|
+| TLT 5d ROC > 1% | 0.205 | Low precision (0.163); flight-to-safety bid has many non-risk-off causes |
+| VIX/SPY 10d correlation > −0.4 | 0.050 | Weak in isolation; VIX score already includes a correlation breakdown signal |
+| VIX9D/VIX ratio | n/a | ^VXST (CBOE 9-day VIX) unavailable on Yahoo Finance; test deferred |
+
+The VIX9D/VIX ratio (near-term vol backwardation) remains a priority candidate for future testing once a reliable data source is identified. A ratio below 0.90 (spot VIX elevated relative to 9-day implied) is a well-known term structure stress indicator.

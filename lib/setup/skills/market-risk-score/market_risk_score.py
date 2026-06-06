@@ -28,13 +28,22 @@ Browser-JSON schema:
     ],
     "HYG":  [{"date": "2026-05-19", "close": 79.1}, ...],
     "SPY":  [{"date": "2026-05-19", "close": 527.3}, ...],
-    "^VIX": [{"date": "2026-05-19", "close": 18.5}, ...]
+    "^VIX": [{"date": "2026-05-19", "close": 18.5}, ...],
+
+    Optional — enable experimental SPY sub-signals:
+    "SPY":  [{"date": "2026-05-19", "high": 528.1, "low": 525.0, "close": 527.3}, ...],
+    "IWM":  [{"date": "2026-05-19", "close": 198.4}, ...]
   }
   DXY rows require "high" and "low" fields.
-  HYG/SPY/VIX rows require only "close".
+  HYG/^VIX rows require only "close".
+  SPY rows require only "close"; optionally include "high" and "low" to enable
+    the intraday reversal signal: (High−Close)/ATR14 ≥ 1.0 → +1 to SPY score.
+  IWM rows (optional) require only "close"; enables the breadth divergence signal:
+    IWM 5d ROC < SPY 5d ROC − 0.5pp → +1 to SPY score.
   Each list must be sorted ascending.
   DXY must cover at least 210 trading days (~1 year).
   HYG/SPY/VIX must cover at least 20 trading days.
+  IWM must cover at least 6 trading days if provided.
 """
 import json
 import sys
@@ -870,7 +879,7 @@ def compute_hyg_score(hyg_closes, spy_closes):
 _SPY_MIN_BARS = 20
 
 
-def compute_spy_score(spy_closes):
+def compute_spy_score(spy_closes, spy_ohlc=None, iwm_closes=None):
     """Compute SPY bearishness score (0-10). Optimised for 5%+ 14-day forward drop prediction."""
     if len(spy_closes) < _SPY_MIN_BARS:
         return {
@@ -909,6 +918,28 @@ def compute_spy_score(spy_closes):
     # Bearish trend context: SMA200 declining OR SMA50 declining
     bearish_ctx = (s200 is not None and current < s200) or (slope50 is not None and slope50 < 0)
 
+    # [★ new] SPY intraday reversal: (High - Close) / ATR14 ≥ 1.0
+    # Measures how much of the daily range was given back into the close.
+    # Ratio ≥ 1.0 means the close-to-high spread exceeds a full ATR — sellers dominated.
+    # Backtested at ≥1.0×ATR: precision 0.250, fires ~9% of days.
+    spy_intraday_rev_ratio = None
+    if spy_ohlc and len(spy_ohlc) >= 15:
+        _oh = [x[1] for x in spy_ohlc]
+        _ol = [x[2] for x in spy_ohlc]
+        _oc = [x[3] for x in spy_ohlc]
+        _atr = calc_atr14(_oh, _ol, _oc)
+        if _atr is not None and _atr > 0:
+            spy_intraday_rev_ratio = (_oh[-1] - _oc[-1]) / _atr
+
+    # [★ new] IWM/SPY 5d return spread (breadth divergence)
+    # Small-cap underperformance signals risk-appetite deterioration at the margin.
+    # Fires when IWM 5d ROC lags SPY 5d ROC by > 0.5 percentage points.
+    # Backtested at −0.5% spread: TPR 0.418, F2 0.342, fires ~41% of days.
+    iwm_spy_spread_5d = None
+    if iwm_closes and len(iwm_closes) > 5 and roc5 is not None and iwm_closes[-6] != 0:
+        iwm_roc5 = iwm_closes[-1] / iwm_closes[-6] - 1
+        iwm_spy_spread_5d = (iwm_roc5 - roc5) * 100  # pct-pts; negative = IWM lags
+
     sig = {
         "below_sma200_neg_slope": s200 is not None and current < s200 and slope200 is not None and slope200 < 0,
         "below_sma200":           s200 is not None and current < s200 and not (slope200 is not None and slope200 < 0),
@@ -925,18 +956,22 @@ def compute_spy_score(spy_closes):
         "sma50_declining":        slope50 is not None and slope50 < 0,
         "bb_exp_down":            bb_exp_down,
         "drawdown_severe":        dd20 is not None and dd20 < -0.05,
+        "intraday_reversal":      spy_intraday_rev_ratio is not None and spy_intraday_rev_ratio >= 1.0,
+        "breadth_divergence":     iwm_spy_spread_5d is not None and iwm_spy_spread_5d < -0.5,
     }
 
     bd = {
-        "sma200":      3 if sig["below_sma200_neg_slope"] else (1 if sig["below_sma200"] else 0),
-        "rsi":         2 if sig["rsi_bear_zone"] else (1 if sig["rsi_late_dist"] else 0),
-        "macd":        2 if sig["macd_hist_bear"] else 0,
-        "roc":         2 if sig["roc_severe"] else (1 if sig["roc_moderate"] else 0),
-        "z_score":     1 if sig["z_danger_zone"] else 0,
-        "hv_rising":   1 if sig["hv_rising"] else 0,
-        "sma50_slope": 1 if sig["sma50_declining"] else 0,
-        "bb_down":     1 if sig["bb_exp_down"] else 0,
-        "drawdown":    1 if sig["drawdown_severe"] else 0,
+        "sma200":            3 if sig["below_sma200_neg_slope"] else (1 if sig["below_sma200"] else 0),
+        "rsi":               2 if sig["rsi_bear_zone"] else (1 if sig["rsi_late_dist"] else 0),
+        "macd":              2 if sig["macd_hist_bear"] else 0,
+        "roc":               2 if sig["roc_severe"] else (1 if sig["roc_moderate"] else 0),
+        "z_score":           1 if sig["z_danger_zone"] else 0,
+        "hv_rising":         1 if sig["hv_rising"] else 0,
+        "sma50_slope":       1 if sig["sma50_declining"] else 0,
+        "bb_down":           1 if sig["bb_exp_down"] else 0,
+        "drawdown":          1 if sig["drawdown_severe"] else 0,
+        "intraday_reversal": 1 if sig["intraday_reversal"] else 0,
+        "breadth_divergence":1 if sig["breadth_divergence"] else 0,
     }
     score = min(sum(bd.values()), 10)
 
@@ -964,6 +999,10 @@ def compute_spy_score(spy_closes):
     if bd["sma50_slope"]:               parts.append("SMA50↓")
     if bd["bb_down"]:                   parts.append("BB break↓")
     if bd["drawdown"] and dd20 is not None: parts.append(f"DD {dd20*100:.1f}%")
+    if bd["intraday_reversal"] and spy_intraday_rev_ratio is not None:
+        parts.append(f"reversal {spy_intraday_rev_ratio:.2f}×ATR ★")
+    if bd["breadth_divergence"] and iwm_spy_spread_5d is not None:
+        parts.append(f"IWM spread {iwm_spy_spread_5d:+.1f}pp ★")
 
     reason = f"{score}/10 {risk_label}"
     if parts:
@@ -973,26 +1012,28 @@ def compute_spy_score(spy_closes):
         return round(v, d) if v is not None else None
 
     return {
-        "close":          _r(current),
-        "spy_risk_score": score,
-        "risk_label":     risk_label,
-        "spy_sma20":      _r(s20),
-        "spy_sma50":      _r(s50),
-        "spy_sma200":     _r(s200),
-        "spy_rsi14":      _r(rsi, 2),
-        "spy_roc5":       _r(roc5, 6),
-        "spy_roc10":      _r(roc10, 6),
-        "spy_roc20":      _r(roc20, 6),
-        "spy_z20":        _r(z20, 4),
-        "spy_macd_hist":  _r(macd_hist, 6),
-        "spy_hv20":       _r(hv20, 2),
-        "spy_dd20":       _r(dd20, 4),
-        "spy_slope50":    _r(slope50, 6),
-        "spy_slope200":   _r(slope200, 6),
-        "signals":        sig,
-        "score_breakdown": bd,
-        "bearish":        bearish,
-        "reason":         reason,
+        "close":                    _r(current),
+        "spy_risk_score":           score,
+        "risk_label":               risk_label,
+        "spy_sma20":                _r(s20),
+        "spy_sma50":                _r(s50),
+        "spy_sma200":               _r(s200),
+        "spy_rsi14":                _r(rsi, 2),
+        "spy_roc5":                 _r(roc5, 6),
+        "spy_roc10":                _r(roc10, 6),
+        "spy_roc20":                _r(roc20, 6),
+        "spy_z20":                  _r(z20, 4),
+        "spy_macd_hist":            _r(macd_hist, 6),
+        "spy_hv20":                 _r(hv20, 2),
+        "spy_dd20":                 _r(dd20, 4),
+        "spy_slope50":              _r(slope50, 6),
+        "spy_slope200":             _r(slope200, 6),
+        "spy_intraday_rev_ratio":   _r(spy_intraday_rev_ratio, 3),
+        "iwm_spy_spread_5d":        _r(iwm_spy_spread_5d, 4),
+        "signals":                  sig,
+        "score_breakdown":          bd,
+        "bearish":                  bearish,
+        "reason":                   reason,
     }
 
 
@@ -1180,6 +1221,21 @@ def compute_signals(source: DataSource, trading_day: datetime.date) -> tuple:
     hyg_closes = [p[1] for p in close_data.get("HYG") or []]
     vix_closes = [p[1] for p in close_data.get("VIX") or []]
 
+    # [★ new] Fetch SPY OHLC for intraday reversal signal
+    spy_ohlc_data = []
+    try:
+        spy_ohlc_data = source.fetch_ohlc("SPY", trading_day)
+    except RuntimeError:
+        pass
+
+    # [★ new] Fetch IWM closes for breadth divergence signal
+    iwm_closes = []
+    try:
+        iwm_pairs = source.fetch("IWM", trading_day)
+        iwm_closes = [p[1] for p in iwm_pairs]
+    except RuntimeError:
+        pass
+
     # Phase B — compute signals
 
     # DXY: full scoring model (uses short spy/hyg for cross-asset signals)
@@ -1212,7 +1268,7 @@ def compute_signals(source: DataSource, trading_day: datetime.date) -> tuple:
             raw["SPY"] = {"error": f"Only {len(pairs) if pairs else 0} trading days, need ≥{_SPY_MIN_BARS}"}
         else:
             closes = [p[1] for p in pairs]
-            result = compute_spy_score(closes)
+            result = compute_spy_score(closes, spy_ohlc=spy_ohlc_data, iwm_closes=iwm_closes)
             result["close_date"] = str(pairs[-1][0])
             signals["SPY"] = result["bearish"]
             raw["SPY"] = result
@@ -1301,6 +1357,47 @@ def format_output(target_date, trading_day, signals, raw) -> str:
         lines.append(f"\n  (Note: {target_date} is a weekend/holiday — using {trading_day})")
     if unknown:
         lines.append(f"\n  ⚠ {unknown} factor(s) unavailable — score based on {known}/4 factors")
+
+    # New signals remarks block
+    spy_raw = raw.get("SPY", {})
+    spy_sigs = spy_raw.get("signals", {})
+    spy_bd   = spy_raw.get("score_breakdown", {})
+    rev_ratio  = spy_raw.get("spy_intraday_rev_ratio")
+    iwm_spread = spy_raw.get("iwm_spy_spread_5d")
+    new_remarks = []
+    if spy_sigs.get("intraday_reversal"):
+        new_remarks.append(
+            f"  ★ [new] SPY intraday reversal: (High−Close)/ATR14 = {rev_ratio:.2f}× "
+            f"(≥1.0 threshold) — sellers dominated intraday; close-to-high gap exceeds a full ATR. "
+            f"+{spy_bd.get('intraday_reversal', 0)} to SPY score. "
+            f"[backtest: precision 0.25, fires ~9% of days]"
+        )
+    elif rev_ratio is not None:
+        new_remarks.append(
+            f"  ★ [new] SPY intraday reversal: (High−Close)/ATR14 = {rev_ratio:.2f}× "
+            f"(threshold 1.0 — not triggered)"
+        )
+    else:
+        new_remarks.append("  ★ [new] SPY intraday reversal: n/a (OHLC data unavailable)")
+
+    if spy_sigs.get("breadth_divergence"):
+        new_remarks.append(
+            f"  ★ [new] IWM/SPY breadth spread: IWM lags SPY by {iwm_spread:+.2f}pp over 5d "
+            f"(< −0.5pp threshold) — small-cap underperformance signals risk rotation. "
+            f"+{spy_bd.get('breadth_divergence', 0)} to SPY score. "
+            f"[backtest: TPR 0.42, F2 0.34, fires ~41% of days]"
+        )
+    elif iwm_spread is not None:
+        new_remarks.append(
+            f"  ★ [new] IWM/SPY breadth spread: IWM vs SPY 5d spread = {iwm_spread:+.2f}pp "
+            f"(threshold −0.5pp — not triggered)"
+        )
+    else:
+        new_remarks.append("  ★ [new] IWM/SPY breadth spread: n/a (IWM data unavailable)")
+
+    if new_remarks:
+        lines.append("\nNew signals (experimental):")
+        lines.extend(new_remarks)
 
     return "\n".join(lines)
 

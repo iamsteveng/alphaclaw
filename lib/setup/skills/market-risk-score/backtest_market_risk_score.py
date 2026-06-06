@@ -160,12 +160,14 @@ _VIX_MIN      = 15
 def run_backtest(years=5, drop_pct=0.05, fwd_window=14, csv_path=None):
     fetch_years = years + 1   # extra year to warm up SMA200
 
-    print(f"Fetching {fetch_years}Y history for SPY, HYG, VIX, DXY...", end=" ", flush=True)
+    print(f"Fetching {fetch_years}Y history for SPY, IWM, HYG, VIX, DXY...", end=" ", flush=True)
     try:
-        spy_raw = fetch_close_history("SPY",      fetch_years)
-        hyg_raw = fetch_close_history("HYG",      years)
-        vix_raw = fetch_close_history("^VIX",     years)
-        dxy_raw = fetch_ohlc_history ("DX-Y.NYB", fetch_years)
+        spy_raw  = fetch_close_history("SPY",      fetch_years)
+        spy_ohlc_raw = fetch_ohlc_history("SPY",   fetch_years)
+        iwm_raw  = fetch_close_history("IWM",      years)
+        hyg_raw  = fetch_close_history("HYG",      years)
+        vix_raw  = fetch_close_history("^VIX",     years)
+        dxy_raw  = fetch_ohlc_history ("DX-Y.NYB", fetch_years)
     except RuntimeError as e:
         print(f"\nError: {e}", file=sys.stderr)
         sys.exit(1)
@@ -175,9 +177,11 @@ def run_backtest(years=5, drop_pct=0.05, fwd_window=14, csv_path=None):
     spy_dates   = [r[0] for r in spy_raw]
     spy_closes  = [r[1] for r in spy_raw]
 
-    hyg_aligned = align_close(hyg_raw, spy_dates)
-    vix_aligned = align_close(vix_raw, spy_dates)
-    dxy_aligned = align_ohlc (dxy_raw, spy_dates)
+    hyg_aligned      = align_close(hyg_raw,      spy_dates)
+    vix_aligned      = align_close(vix_raw,      spy_dates)
+    dxy_aligned      = align_ohlc (dxy_raw,      spy_dates)
+    spy_ohlc_aligned = align_ohlc (spy_ohlc_raw, spy_dates)
+    iwm_aligned      = align_close(iwm_raw,      spy_dates)
 
     print(f"Walk-forward evaluation ({len(spy_dates):,} total trading days)...", end=" ", flush=True)
 
@@ -191,6 +195,13 @@ def run_backtest(years=5, drop_pct=0.05, fwd_window=14, csv_path=None):
         vix_window = [v for v in vix_aligned[:i + 1] if v is not None]
         dxy_window = [r for r in dxy_aligned[:i + 1] if r is not None]
 
+        # align_close/align_ohlc forward-fill from the first available date, so
+        # None only appears before the ticker's first trading day.  Taking the
+        # tail after stripping those leading Nones preserves SPY-calendar alignment
+        # for the 5-day ROC spread and ATR14 lookbacks.
+        spy_ohlc_window = [r for r in spy_ohlc_aligned[:i + 1] if r is not None]
+        iwm_window      = [v for v in iwm_aligned[:i + 1]      if v is not None]
+
         hyg_short  = hyg_window[-_SHORT_WINDOW:]
         vix_short  = vix_window[-_SHORT_WINDOW:]
 
@@ -201,7 +212,11 @@ def run_backtest(years=5, drop_pct=0.05, fwd_window=14, csv_path=None):
         try:
             dxy_r = compute_dxy_score(dxy_window[-_DXY_MIN:], spy_short, hyg_short)
             hyg_r = compute_hyg_score(hyg_short, spy_short)
-            spy_r = compute_spy_score(spy_window)
+            spy_r = compute_spy_score(
+                spy_window,
+                spy_ohlc=spy_ohlc_window[-30:] if len(spy_ohlc_window) >= 15 else None,
+                iwm_closes=iwm_window[-_SHORT_WINDOW:] if len(iwm_window) > 5 else None,
+            )
             vix_r = compute_vix_score(vix_short, spy_short)
         except Exception:
             continue
@@ -220,18 +235,20 @@ def run_backtest(years=5, drop_pct=0.05, fwd_window=14, csv_path=None):
         vix_b = bool(vix_r.get("bearish"))
 
         results.append({
-            "date":         str(spy_dates[i]),
-            "dxy_score":    dxy_r.get("dxy_equity_risk_score") or 0,
-            "hyg_score":    hyg_r.get("hyg_risk_score") or 0,
-            "spy_score":    spy_r.get("spy_risk_score") or 0,
-            "vix_score":    vix_r.get("vix_risk_score") or 0,
-            "dxy_bearish":  dxy_b,
-            "hyg_bearish":  hyg_b,
-            "spy_bearish":  spy_b,
-            "vix_bearish":  vix_b,
-            "composite":    int(dxy_b) + int(hyg_b) + int(spy_b) + int(vix_b),
-            "label":        label,
-            "fwd_drawdown": round(drawdown * 100, 2),
+            "date":              str(spy_dates[i]),
+            "dxy_score":         dxy_r.get("dxy_equity_risk_score") or 0,
+            "hyg_score":         hyg_r.get("hyg_risk_score") or 0,
+            "spy_score":         spy_r.get("spy_risk_score") or 0,
+            "vix_score":         vix_r.get("vix_risk_score") or 0,
+            "dxy_bearish":       dxy_b,
+            "hyg_bearish":       hyg_b,
+            "spy_bearish":       spy_b,
+            "vix_bearish":       vix_b,
+            "spy_intraday_rev":  spy_r.get("spy_intraday_rev_ratio"),
+            "spy_breadth_spread":spy_r.get("iwm_spy_spread_5d"),
+            "composite":         int(dxy_b) + int(hyg_b) + int(spy_b) + int(vix_b),
+            "label":             label,
+            "fwd_drawdown":      round(drawdown * 100, 2),
         })
 
     print(f"done ({len(results):,} evaluation days)\n")
