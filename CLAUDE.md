@@ -85,7 +85,7 @@ npm run dev:shell    # bash into the running container
 ```
 
 **Credentials for local instance:**
-- Dashboard: http://localhost:3001, password `62875094`
+- Dashboard: http://localhost:3001, password from `$SETUP_PASSWORD` in `openclaw-railway-template/.env`
 - Telegram bot: `@alphaclaw_dev_bot` (paired to user 7374876027)
 - Model: `deepseek/deepseek-v4-pro`
 - Workspace repo: `iamsteveng/openclaw-dev`
@@ -100,7 +100,7 @@ RAILWAY_URL="https://openclaw-railway-template-production-a7f6.up.railway.app"
 
 # 1. Login to Railway alphaclaw to pull keys
 curl -s -c /tmp/railway-cookies.txt -X POST "$RAILWAY_URL/api/auth/login" \
-  -H "Content-Type: application/json" -d '{"password":"62875094"}'
+  -H "Content-Type: application/json" -d "{\"password\":\"$SETUP_PASSWORD\"}"
 
 # 2. Extract the key you want (e.g. DEEPSEEK_API_KEY)
 KEY=$(curl -s -b /tmp/railway-cookies.txt "$RAILWAY_URL/api/env" | \
@@ -127,7 +127,7 @@ cd ../openclaw-railway-template && npm run dev:restart
 ```bash
 # Login first to get session cookie
 curl -s -c /tmp/alphaclaw-cookies.txt -X POST http://localhost:3001/api/auth/login \
-  -H "Content-Type: application/json" -d '{"password":"62875094"}'
+  -H "Content-Type: application/json" -d "{\"password\":\"$SETUP_PASSWORD\"}"
 # Send message
 curl -s -b /tmp/alphaclaw-cookies.txt -X POST http://localhost:3001/api/agent/message \
   -H "Content-Type: application/json" \
@@ -201,6 +201,99 @@ HOME=/data openclaw skills list | grep <skill-name>
 
 # Test with fresh agent session:
 docker exec <container> openclaw agent --agent main --message "use my-skill-name"
+```
+
+## Writing Cron / Agent Messages That Reliably Trigger Behaviors
+
+When the OpenClaw main agent runs as a cron job (via `agentTurn` payload), it has full bash/shell tool access — but it won't infer that a CLI tool exists unless the message tells it explicitly. Generic instructions like "read from GBrain" cause the agent to search for a plugin integration rather than running the `gbrain` shell command.
+
+**The pattern that works:** name the exact command.
+
+```
+# ❌ Too vague — agent searches for a GBrain plugin, finds nothing
+"Read all pages under plans/ in GBrain with status: active."
+
+# ✅ Explicit — agent runs the shell command directly
+"Run: gbrain list — to see all pages. For each slug starting with plans/,
+run: gbrain get <slug> to read the frontmatter."
+```
+
+**Iterating on a message before wiring it to a cron:**
+
+```bash
+# Test the message directly — bypasses cron scheduling, output visible immediately
+docker exec <container> bash -c "HOME=/data openclaw agent --agent main \
+  --message 'your message here' 2>/dev/null"
+
+# Pass a multi-line message via a temp file to avoid shell-quoting issues
+cat > /tmp/msg.txt << 'EOF'
+Step 1: Run gbrain list...
+Step 2: ...
+EOF
+docker exec -i <container> bash -c "HOME=/data openclaw agent --agent main \
+  --message \"$(cat /tmp/msg.txt | sed 's/\"/\\\"/g')\"" 2>/dev/null
+```
+
+**Message structure that works reliably:**
+
+1. Open with `"<task name> — execute now, no confirmation needed."` — prevents the agent asking for permission.
+2. Use numbered steps. The agent executes them sequentially.
+3. Name every shell command explicitly: `Run: gbrain list`, `Run: gbrain get <slug>`, etc.
+4. For writes: include `gbrain restore <slug> 2>/dev/null` **before** `gbrain put <slug>` — GBrain's `put` on a soft-deleted page updates the content but does **not** restore page visibility. Without the restore step the agent's writes become invisible.
+5. End with `"Output ONLY the formatted report — no questions, no follow-ups."` to prevent the agent asking where to send the output.
+
+**Soft-deleted GBrain pages:**
+
+```bash
+# put on a soft-deleted page → content updated but page stays invisible to gbrain list/get
+gbrain put plans/aapl       # ❌ page still soft-deleted, agent can't see it
+
+# Always restore first:
+gbrain restore plans/aapl 2>/dev/null || true
+gbrain put plans/aapl       # ✅ page visible after this
+```
+
+In cron messages tell the agent: `"first run: gbrain restore plans/<slug> 2>/dev/null, then gbrain put plans/<slug>"`.
+
+## GBrain in Integration Tests
+
+The container's `gbrain` CLI uses a different pglite database than the host's `gbrain`:
+
+| Context | Database path |
+|---|---|
+| Host `gbrain` | `/home/ubuntu/.gbrain/brain.pglite` |
+| Container `gbrain` (docker exec or gateway) | `/root/.gbrain/brain.pglite` |
+
+Tests that seed data with the host `gbrain` and assert with the host `gbrain` will always fail — the agent reads and writes the **container** database. Fix: override `gbrain` in test helpers to route through `docker exec`:
+
+```bash
+# In scripts/tests/helpers.sh — routes all gbrain calls into the container
+gbrain() {
+  if [[ "${1:-}" == "put" ]]; then
+    docker exec -i "$CONTAINER" gbrain "$@"   # -i only for put (reads stdin)
+  else
+    docker exec "$CONTAINER" gbrain "$@"      # no -i; avoids consuming piped confirm stdin
+  fi
+}
+```
+
+Using `-i` on non-`put` subcommands is dangerous when the test runner pipes `y\ny` to stdin for confirm prompts — `docker exec -i` will consume those characters, causing later `read` calls to get no input and exit non-zero under `set -e`.
+
+**GBrain YAML serialization gotcha:**
+
+GBrain serializes `date:` fields as `date: '2026-06-04T00:00:00.000Z'` (single-quoted ISO string). Embedding this in a bash `eval "... '$VAR' ..."` check breaks the quote parsing. Use a temp file for any variable that may contain GBrain date fields:
+
+```bash
+# ❌ Breaks if $LEARNING contains  date: '2026-06-04T...'
+LEARNING=$(gbrain get "learning/$TODAY")
+check "page created" "[[ -n '$LEARNING' ]]"
+
+# ✅ Safe — file path never contains quotes
+LEARNING_FILE=$(mktemp)
+gbrain get "learning/$TODAY" > "$LEARNING_FILE" 2>/dev/null || true
+check "page created" "[[ -s \"$LEARNING_FILE\" ]]"
+check "mentions AAPL"  "grep -qE 'AAPL|TSLA' \"$LEARNING_FILE\""
+rm -f "$LEARNING_FILE"
 ```
 
 ## Claude Code Authentication
