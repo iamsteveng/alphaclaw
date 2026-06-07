@@ -104,18 +104,21 @@ All four jobs run on **weekdays only** in the **America/New_York** timezone.
 
 ### 4. EOD Loop — 4:30 PM ET
 
-**Purpose:** End-of-day audit of all plans against the day's price action.
+**Purpose:** End-of-day audit of all plans against the day's official closing prices.
 
 **Steps:**
 1. Loads all trading plans (active, closed, and invalidated).
-2. For each plan:
+2. Fetches fresh closing prices from Finnhub for every ticker in the loaded plans — curls `/api/v1/quote` for each ticker and writes the results to `~/.openclaw/finnhub-prices.json`. At 4:30 PM the market has been closed 30 minutes and Finnhub returns official closing prices. If `FINNHUB_API_KEY` is unset or a quote returns `c=0`, that ticker is flagged as missing data.
+3. For each plan:
    - Checks if the invalidation level was breached (→ marks plan invalidated).
    - Checks if the target was hit (→ marks plan closed/won).
    - Audits conviction calibration vs. actual price movement.
-3. Writes a full analysis to GBrain at `learning/YYYY-MM-DD`.
-4. Publishes a Telegram summary of the day's outcomes and calibration notes.
+4. Writes a full analysis to GBrain at `learning/YYYY-MM-DD`.
+5. Publishes a Telegram summary of the day's outcomes and calibration notes.
 
 **Timeout:** 300 seconds
+
+> **Note:** The Finnhub REST poller only runs during 9:20 AM–12:40 PM ET, so `finnhub-prices.json` would otherwise contain stale midday prices at EOD. Step 2 overwrites it with fresh closing data before any analysis runs.
 
 ---
 
