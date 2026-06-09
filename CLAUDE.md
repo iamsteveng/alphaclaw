@@ -296,6 +296,65 @@ check "mentions AAPL"  "grep -qE 'AAPL|TSLA' \"$LEARNING_FILE\""
 rm -f "$LEARNING_FILE"
 ```
 
+## Troubleshooting Cron Job Failures via Chat History API
+
+When a cron job fails, use these steps to pull the agent's chat history and diagnose the root cause.
+Replace `$RAILWAY_URL` and `$SETUP_PASSWORD` with your instance values (see CLAUDE.md local dev section for local equivalent).
+
+**Step 1 — Authenticate**
+```bash
+RAILWAY_URL="https://openclaw-railway-template-production-a7f6.up.railway.app"
+SETUP_PASSWORD="<your password>"
+curl -s -c /tmp/ac.txt -X POST "$RAILWAY_URL/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"password\":\"$SETUP_PASSWORD\"}"
+```
+
+**Step 2 — List jobs, find the failing job's ID**
+```bash
+curl -s -b /tmp/ac.txt "$RAILWAY_URL/api/cron/jobs" | python3 -m json.tool
+# Each job has: id, name, enabled, schedule, payload.message
+```
+
+**Step 3 — List recent runs, find the failed run's timestamp**
+```bash
+JOB_ID="<id from step 2>"
+curl -s -b /tmp/ac.txt "$RAILWAY_URL/api/cron/jobs/$JOB_ID/runs?sortDir=desc" | python3 -m json.tool
+# Each run has: ts (Unix ms), status ("ok" | "error"), error, durationMs
+```
+
+**Step 4 — Pull agent chat history for that run**
+```bash
+RUN_TS="<ts from step 3>"
+curl -s -b /tmp/ac.txt "$RAILWAY_URL/api/cron/jobs/$JOB_ID/runs/$RUN_TS/chat-history" | python3 -m json.tool
+# Response: { ok, sessionKey, run, messages: [{role, content}] }
+```
+
+**One-liner to scan all jobs for failures:**
+```bash
+curl -s -b /tmp/ac.txt "$RAILWAY_URL/api/cron/jobs" | python3 -c "
+import json,sys,subprocess,os
+jobs = json.load(sys.stdin).get('jobs',[])
+for j in jobs:
+    r = subprocess.run(['curl','-s','-b','/tmp/ac.txt',
+        f'{os.environ[\"RAILWAY_URL\"]}/api/cron/jobs/{j[\"id\"]}/runs?sortDir=desc&limit=3'],
+        capture_output=True, text=True)
+    runs = json.loads(r.stdout).get('runs',{}).get('entries',[])
+    for run in runs:
+        if run.get('status') == 'error':
+            print(f'FAIL  {j[\"name\"]}  ts={run[\"ts\"]}  error={run.get(\"error\")}')
+"
+```
+
+**Known limitation — timeout failures have no chat history:**
+When a job times out (`error: "cron: job execution timed out"`), the `sessionKey` in the run record is empty and `messages` will be `[]`. This means the agent did run but the session wasn't linked before the timeout killed the process. To diagnose timeout failures:
+- Check if the job's `timeoutSeconds` in its payload is too low for the work it does.
+- Simplify or split the job's prompt into smaller steps.
+- Check gateway logs: `npm run dev:logs` (local) or Railway deployment logs for the relevant time window.
+
+**Local instance equivalent:**
+Replace `$RAILWAY_URL` with `http://localhost:3001` and use the local `$SETUP_PASSWORD` from `openclaw-railway-template/.env`.
+
 ## Claude Code Authentication
 
 `claude setup-token` (run on the user's local machine) generates a `sk-ant-oat01-...` token — this is the primary recommended auth method for cloud deployments. The token is validated against `api.anthropic.com/v1/models` before storage.
