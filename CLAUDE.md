@@ -205,18 +205,7 @@ docker exec <container> openclaw agent --agent main --message "use my-skill-name
 
 ## Writing Cron / Agent Messages That Reliably Trigger Behaviors
 
-When the OpenClaw main agent runs as a cron job (via `agentTurn` payload), it has full bash/shell tool access — but it won't infer that a CLI tool exists unless the message tells it explicitly. Generic instructions like "read from GBrain" cause the agent to search for a plugin integration rather than running the `gbrain` shell command.
-
-**The pattern that works:** name the exact command.
-
-```
-# ❌ Too vague — agent searches for a GBrain plugin, finds nothing
-"Read all pages under plans/ in GBrain with status: active."
-
-# ✅ Explicit — agent runs the shell command directly
-"Run: gbrain list — to see all pages. For each slug starting with plans/,
-run: gbrain get <slug> to read the frontmatter."
-```
+When writing instructions in cron job content or SKILL.md, if there is a target skill to be triggered, make sure the instruction matches with the `triggers` frontmatter in the target skill.
 
 **Iterating on a message before wiring it to a cron:**
 
@@ -238,9 +227,8 @@ docker exec -i <container> bash -c "HOME=/data openclaw agent --agent main \
 
 1. Open with `"<task name> — execute now, no confirmation needed."` — prevents the agent asking for permission.
 2. Use numbered steps. The agent executes them sequentially.
-3. Name every shell command explicitly: `Run: gbrain list`, `Run: gbrain get <slug>`, etc.
-4. For writes: include `gbrain restore <slug> 2>/dev/null` **before** `gbrain put <slug>` — GBrain's `put` on a soft-deleted page updates the content but does **not** restore page visibility. Without the restore step the agent's writes become invisible.
-5. End with `"Output ONLY the formatted report — no questions, no follow-ups."` to prevent the agent asking where to send the output.
+3. For writes: include `gbrain restore <slug> 2>/dev/null` **before** `gbrain put <slug>` — GBrain's `put` on a soft-deleted page updates the content but does **not** restore page visibility. Without the restore step the agent's writes become invisible.
+4. End with `"Output ONLY the formatted report — no questions, no follow-ups."` to prevent the agent asking where to send the output.
 
 **Soft-deleted GBrain pages:**
 
