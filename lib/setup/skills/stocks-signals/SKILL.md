@@ -1,5 +1,5 @@
 ---
-name: finnhub-signals
+name: stocks-signals
 description: Fetch real-time price, analyst consensus, recent news, upcoming earnings, and fundamentals for a stock ticker using the Finnhub free-tier API. Invoke when you need current price data or market context before building or auditing a trading plan.
 triggers:
   - "get stocks signal"
@@ -7,7 +7,7 @@ triggers:
   - "get stocks price"
 ---
 
-# Finnhub Signals
+# Stocks Signals
 
 Fetches a signal report for a single ticker from the Finnhub free-tier API. Covers price, fundamentals, analyst consensus, recent news, and upcoming earnings. Designed to be called before generating or auditing a trading plan.
 
@@ -15,15 +15,15 @@ Fetches a signal report for a single ticker from the Finnhub free-tier API. Cove
 
 ```bash
 # Full report (human-readable)
-python3 /data/.openclaw/workspace/skills/finnhub-signals/finnhub_signals.py AAPL
+python3 /data/.openclaw/workspace/skills/stocks-signals/finnhub_signals.py AAPL
 
 # Machine-readable JSON (for downstream processing)
-python3 /data/.openclaw/workspace/skills/finnhub-signals/finnhub_signals.py AAPL --json
+python3 /data/.openclaw/workspace/skills/stocks-signals/finnhub_signals.py AAPL --json
 
 # Specific section only
-python3 /data/.openclaw/workspace/skills/finnhub-signals/finnhub_signals.py AAPL --section price
-python3 /data/.openclaw/workspace/skills/finnhub-signals/finnhub_signals.py AAPL --section analyst
-python3 /data/.openclaw/workspace/skills/finnhub-signals/finnhub_signals.py AAPL --section news
+python3 /data/.openclaw/workspace/skills/stocks-signals/finnhub_signals.py AAPL --section price
+python3 /data/.openclaw/workspace/skills/stocks-signals/finnhub_signals.py AAPL --section analyst
+python3 /data/.openclaw/workspace/skills/stocks-signals/finnhub_signals.py AAPL --section news
 ```
 
 Requires `FINNHUB_API_KEY` to be set in the environment.
@@ -50,7 +50,7 @@ Requires `FINNHUB_API_KEY` to be set in the environment.
 Call this skill at the start of any plan generation or audit:
 
 ```
-Step 1: Run: python3 /data/.openclaw/workspace/skills/finnhub-signals/finnhub_signals.py TICKER --json
+Step 1: Run: python3 /data/.openclaw/workspace/skills/stocks-signals/finnhub_signals.py TICKER --json
         Use the output for current price, analyst consensus, and news context when
         populating entry, target, invalidation, and conviction fields.
 ```
