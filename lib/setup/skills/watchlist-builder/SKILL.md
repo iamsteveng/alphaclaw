@@ -15,16 +15,25 @@ Runs ~19:30 HKT daily (between HK market close and US market open). Reads GBrain
 ## Step 1 — Fetch inputs
 
 ```
-1a. Query GBrain for recent content (last 24 hours):
-    gbrain query "stock ticker trading signal news" --no-expand
-    Focus on pages with type=tweet or type=article, posted within 24h.
+1a. Get pages with type=tweet or type=article posted within 24h from GBrain, limit 100.
 
-1b. Read the current watchlist:
+1b. Extract ticker symbols from the pages fetched in 1a.
+    A ticker is a 1–5 character uppercase symbol (e.g. AAPL, TSLA, NVDA).
+    Include a ticker if it appears as: $TICKER, "TICKER stock", "TICKER shares", or standalone uppercase in a financial context.
+    Exclude common non-ticker uppercase words: IPO, ETF, CEO, CFO, USD, HKD, NYSE, NASDAQ, AI, US, EU, UK, GDP, EPS, PE.
+    Deduplicate. This is the working list for Step 2.
+
+1c. Read the current watchlist:
     gbrain get watchlist/current
     Extract active tickers and their conviction levels.
 
-1c. Get the current market risk score.
+1d. Get the current market risk score.
     Note the classification (Risk On / Neutral / Caution / Risk Off).
+
+1e. Check if one or more tickers were explicitly requested for rebuild (e.g. "rebuild AAOI, RDDT, ONDS").
+    If yes, mark those tickers as force-rebuild. They will skip Step 3 entirely and go straight to Steps 4b–4e,
+    regardless of whether an active plan already exists or whether the entry zone is still valid.
+    Add them to the working list if not already present.
 ```
 
 ---
@@ -61,6 +70,25 @@ If any of the three no longer matches the stored conviction:
 - Do NOT write to GBrain yet — include in the Telegram announcement for Steve to confirm
 
 If all three still support the stored conviction: note "conviction holds" in the announcement.
+
+### 3d — Entry reachability check (run after the three checks above)
+
+Using the current price from `~/.openclaw/finnhub-prices.json` and the plan's stored `entry` and `invalidation`:
+
+```
+stop_distance = abs(entry - invalidation)
+price_drift   = abs(current_price - entry)
+```
+
+**Stale if:**
+- LONG: `current_price > entry` AND `price_drift > stop_distance` (price ran more than one stop-distance above entry — structural zone missed)
+- SHORT: `current_price < entry` AND `price_drift > stop_distance` (price dropped more than one stop-distance below entry — structural zone missed)
+
+**If stale:** the entry zone is no longer valid. Skip the conviction result and trigger a full plan rebuild:
+- Run Steps 4b → 4e for this ticker (fetch fresh signals, generate new plan, save as `pending-confirmation`)
+- In the Telegram announcement, flag it as a rebuild: `♻️ <TICKER>: entry zone stale (price drifted X% past entry) — new plan generated`
+
+**If entry is still reachable:** proceed normally with the conviction audit result.
 
 ---
 
@@ -200,6 +228,10 @@ Market risk: <Risk On | Neutral | Caution | Risk Off>
 🚫 Blocked:
 - <TICKER>: plan cap at 10 — no new plans until an existing one closes
 - <TICKER>: RR 1.4:1 below minimum 2:1 — rejected
+
+♻️ Rebuilt plans (entry zone stale — pending your confirmation):
+✅ <TICKER> [LONG/SHORT] entry <X> target <X> invalidation <X> RR <X> conviction <N>/5
+   Rebuilt because: price drifted X% past original entry
 
 ✔️ Conviction holds:
 - <TICKER>: thesis unchanged, conviction 4/5
