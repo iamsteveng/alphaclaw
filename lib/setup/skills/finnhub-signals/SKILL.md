@@ -33,12 +33,13 @@ Requires `FINNHUB_API_KEY` to be set in the environment.
 | Section | Data |
 |---------|------|
 | Price | Current, open, high, low, prev close, % change, 52W range, market cap, beta |
+| Technicals | RSI(14), SMA10, SMA20, SMA50, SMA200 (via Yahoo Finance — free, no auth) |
 | Analyst | Buy/hold/sell counts, consensus label |
 | News | Top 5 headlines from last 7 days |
 | Earnings | Next earnings date and days until it |
 | Fundamentals | P/E, P/B, P/S, gross margin, net margin |
 
-**Not available on free tier:** RSI/MACD/Bollinger Bands, SMA/EMA, support/resistance, price targets, sentiment scores — these require Finnhub Premium (`/indicator`, `/scan/support-resistance`, `/stock/price-target`, `/news-sentiment`).
+**Not available on free tier (Finnhub Premium required):** MACD, Bollinger Bands, EMA, support/resistance, price targets, sentiment scores (`/indicator`, `/scan/support-resistance`, `/stock/price-target`, `/news-sentiment`). RSI and SMA are computed from Yahoo Finance daily closes instead.
 
 ## Rate limits
 
@@ -77,7 +78,17 @@ beta                       Beta vs S&P 500 (>1 = more volatile than market)
 week52.high                52-week intraday high
 week52.low                 52-week intraday low
 
-technicals                 null — requires Finnhub Premium (/indicator endpoint)
+technicals.rsi14           RSI(14) using Wilder's smoothed method; range 0–100
+technicals.rsi_zone        "Oversold" (<30) | "Neutral" (30–70) | "Overbought" (>70)
+technicals.sma10           10-day simple moving average of closing prices
+technicals.sma20           20-day simple moving average of closing prices
+technicals.sma50           50-day simple moving average of closing prices
+technicals.sma200          200-day simple moving average of closing prices
+technicals.above_sma10     true if current price > SMA10
+technicals.above_sma20     true if current price > SMA20
+technicals.above_sma50     true if current price > SMA50
+technicals.above_sma200    true if current price > SMA200
+                           (technicals is null if Yahoo Finance data unavailable)
 support_resistance         null — requires Finnhub Premium (/scan/support-resistance endpoint)
 
 analyst.strong_buy         Number of analysts with Strong Buy rating

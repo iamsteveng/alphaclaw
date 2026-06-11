@@ -65,6 +65,89 @@ def _last(arr):
 
 
 # ---------------------------------------------------------------------------
+# Yahoo Finance — daily closes for technical indicators
+# ---------------------------------------------------------------------------
+
+_YF_URL_1Y = (
+    "https://query1.finance.yahoo.com/v8/finance/chart/"
+    "{symbol}?range=1y&interval=1d&includePrePost=false"
+)
+
+
+def fetch_yf_closes(ticker: str) -> list:
+    """Fetch ~1 year of daily closing prices from Yahoo Finance (no auth needed)."""
+    url = _YF_URL_1Y.format(symbol=urllib.parse.quote(ticker, safe=""))
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (compatible; finnhub-signals/1.0)",
+        "Accept": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+    except (urllib.error.HTTPError, urllib.error.URLError,
+            TimeoutError, json.JSONDecodeError, ValueError):
+        return []
+    try:
+        result = (data.get("chart") or {}).get("result") or []
+        if not result:
+            return []
+        quotes = (result[0].get("indicators") or {}).get("quote") or []
+        if not quotes:
+            return []
+        return [c for c in (quotes[0].get("close") or []) if c is not None]
+    except Exception:
+        return []
+
+
+def _compute_sma(closes: list, period: int):
+    if len(closes) < period:
+        return None
+    return round(sum(closes[-period:]) / period, 4)
+
+
+def _compute_rsi(closes: list, period: int = 14):
+    if len(closes) < period + 1:
+        return None
+    changes = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    avg_gain = sum(max(c, 0.0) for c in changes[:period]) / period
+    avg_loss = sum(abs(min(c, 0.0)) for c in changes[:period]) / period
+    for c in changes[period:]:
+        avg_gain = (avg_gain * (period - 1) + max(c, 0.0)) / period
+        avg_loss = (avg_loss * (period - 1) + abs(min(c, 0.0))) / period
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return round(100 - (100 / (1 + rs)), 2)
+
+
+def compute_technicals(closes: list, current_price) -> dict:
+    if not closes:
+        return {"available": False}
+    rsi   = _compute_rsi(closes)
+    sma10 = _compute_sma(closes, 10)
+    sma20 = _compute_sma(closes, 20)
+    sma50 = _compute_sma(closes, 50)
+    sma200 = _compute_sma(closes, 200)
+    rsi_zone = None
+    if rsi is not None:
+        rsi_zone = "Oversold" if rsi < 30 else ("Overbought" if rsi > 70 else "Neutral")
+    cur = current_price
+    return {
+        "available":    True,
+        "rsi14":        rsi,
+        "rsi_zone":     rsi_zone,
+        "sma10":        sma10,
+        "sma20":        sma20,
+        "sma50":        sma50,
+        "sma200":       sma200,
+        "above_sma10":  (cur is not None and sma10  is not None and cur > sma10),
+        "above_sma20":  (cur is not None and sma20  is not None and cur > sma20),
+        "above_sma50":  (cur is not None and sma50  is not None and cur > sma50),
+        "above_sma200": (cur is not None and sma200 is not None and cur > sma200),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Data fetching
 # ---------------------------------------------------------------------------
 
@@ -294,7 +377,7 @@ def _val(v, fmt=".2f") -> str:
 
 def format_human(ticker: str, section: str,
                  price: dict, profile: dict, metrics: dict,
-                 rec: dict, news: list, earnings: dict) -> str:
+                 tech: dict, rec: dict, news: list, earnings: dict) -> str:
     lines = []
 
     name = profile.get("name") or ticker
@@ -343,10 +426,33 @@ def format_human(ticker: str, section: str,
         )
         lines.append("")
 
-    # --- TECHNICALS / S/R (Finnhub Premium only) ---
+    # --- TECHNICALS ---
     if show_all or section == "tech":
-        lines.append("TECHNICALS / SUPPORT & RESISTANCE")
-        lines.append("  [requires Finnhub Premium — /indicator and /scan/support-resistance not on free tier]")
+        if tech.get("available"):
+            rsi  = tech.get("rsi14")
+            zone = tech.get("rsi_zone") or "n/a"
+            s10  = tech.get("sma10")
+            s20  = tech.get("sma20")
+            s50  = tech.get("sma50")
+            s200 = tech.get("sma200")
+            cur  = price.get("current")
+            rsi_str = f"{_val(rsi, '.1f')}  [{zone}]" if rsi is not None else "n/a"
+            lines.append("TECHNICALS  (via Yahoo Finance)")
+            lines.append(f"RSI(14):  {rsi_str}")
+            lines.append(
+                f"SMA10: {_price(s10, 2)}   SMA20: {_price(s20, 2)}"
+                f"   SMA50: {_price(s50, 2)}   SMA200: {_price(s200, 2)}"
+            )
+            if cur is not None:
+                checks = [(lbl, v) for lbl, v in
+                          [("SMA10", s10), ("SMA20", s20), ("SMA50", s50), ("SMA200", s200)]
+                          if v is not None]
+                if checks:
+                    lines.append("→ Price above: " +
+                                 "  ".join(f"{lbl} {'✓' if cur > v else '✗'}" for lbl, v in checks))
+        else:
+            lines.append("TECHNICALS")
+            lines.append("  [Yahoo Finance data unavailable for this ticker]")
         lines.append("")
 
     # --- ANALYST ---
@@ -431,7 +537,7 @@ def format_human(ticker: str, section: str,
 
 def build_json_output(ticker: str,
                       price: dict, profile: dict, metrics: dict,
-                      rec: dict, news: list, earnings: dict) -> dict:
+                      tech: dict, rec: dict, news: list, earnings: dict) -> dict:
     cap_m = profile.get("market_cap")
     consensus = _analyst_consensus(rec)
 
@@ -465,7 +571,18 @@ def build_json_output(ticker: str,
             "high": _r(metrics.get("week52_high"), 4),
             "low":  _r(metrics.get("week52_low"), 4),
         },
-        "technicals":         None,
+        "technicals": {
+            "rsi14":        tech.get("rsi14"),
+            "rsi_zone":     tech.get("rsi_zone"),
+            "sma10":        tech.get("sma10"),
+            "sma20":        tech.get("sma20"),
+            "sma50":        tech.get("sma50"),
+            "sma200":       tech.get("sma200"),
+            "above_sma10":  tech.get("above_sma10"),
+            "above_sma20":  tech.get("above_sma20"),
+            "above_sma50":  tech.get("above_sma50"),
+            "above_sma200": tech.get("above_sma200"),
+        } if tech.get("available") else None,
         "support_resistance": None,
         "analyst": {
             "strong_buy":    rec.get("strong_buy"),
@@ -540,11 +657,14 @@ def main():
     news     = extract_news(raw)
     earnings = extract_earnings(raw)
 
+    closes = fetch_yf_closes(ticker)
+    tech   = compute_technicals(closes, price.get("current"))
+
     if args.json:
-        out = build_json_output(ticker, price, profile, metrics, rec, news, earnings)
+        out = build_json_output(ticker, price, profile, metrics, tech, rec, news, earnings)
         print(json.dumps(out, indent=2))
     else:
-        text = format_human(ticker, args.section, price, profile, metrics, rec, news, earnings)
+        text = format_human(ticker, args.section, price, profile, metrics, tech, rec, news, earnings)
         print(text)
 
 
