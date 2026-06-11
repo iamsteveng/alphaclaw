@@ -74,50 +74,47 @@ Read `plans/<TICKER>` (any status). If a plan exists with `status: active` in th
 
 Do NOT generate the new plan. Include this conflict message in the Telegram announcement.
 
-### 4b — Generate the trading plan
+### 4b — Fetch signals (MANDATORY — run before any level determination)
 
-Using the GBrain content as evidence:
+You MUST fetch live signals for the ticker before determining entry, target, or invalidation. Run:
+
+`python3 /data/.openclaw/workspace/skills/stocks-signals/finnhub_signals.py TICKER --json`
+
+Replace TICKER with the actual symbol. Capture the full JSON output. Use it for: current price, RSI(14) and rsi_zone, SMA10/20/50/200 positions, analyst consensus (buy/hold/sell counts + consensus label), next earnings date (earnings_days_away), beta, recent news headlines, P/E, P/S. If the script fails or FINNHUB_API_KEY is unset, skip this ticker (note as NO_SIGNALS_DATA). Do NOT proceed to Step 4c without running this command first.
+
+### 4c — Generate the trading plan
+
+**Entry** — Entry is NOT the current price or closing price. Identify a structural entry zone using signals data. Preferred types in order: (1) Pullback to support near SMA50 in an uptrend; (2) Post-catalyst consolidation after an upgrade or index inclusion; (3) Capitulation wick on no company-specific bad news; (4) Breakout retest. AVOID chasing. Do NOT lower entry because current price dropped — that is anchoring. If no structural entry zone exists, skip (NO_ENTRY_FOUND).
+
+**Invalidation** — Stop must be at a structural level, not a percentage. For LONG: stop BELOW support (e.g. support $50 → stop $49.50). For SHORT: stop ABOVE resistance. If beta > 3, widen stop for gap risk. If R/R after stop placement < 1.5, skip (RR_BELOW_MINIMUM).
+
+**Target** — Must be at a realistic resistance level, not a round number. Use SMA200, 52-week high/low, price structure. R/R minimum: 2.0 for LONG, 1.5 for SHORT. If achieving R/R requires everything to go right, lower the target.
+
+**Conviction points (3–4 required):**
+1. At least one must cite analyst consensus by count from signals (e.g. "Finnhub: 12 Buy, 3 Hold = Buy consensus")
+2. At least one must cite a specific financial or technical data point from signals (RSI, SMA position, P/E, beta, specific news headline with date)
+3. Every point must be falsifiable — state what would break it (e.g. "valid while above SMA50; breaks on weekly close below $X")
+Do NOT write generic points like "strong momentum" or "positive sentiment."
+
+**setup_rating (1–5) — do NOT default to 3:**
+- 5 = multi-catalyst confirmed (analyst Buy/Strong Buy + specific news catalyst + technical entry alignment), R/R ≥ 3.0, earnings_days_away > 14
+- 4 = strong thesis, one clear catalyst, R/R 2.5–3.0, analyst consensus at least Hold, valid technical setup
+- 3 = decent thesis, R/R 2.0–2.5, some concerns (stretched valuation, binary catalyst, suboptimal timing)
+- 2 = thesis intact but entry extended, R/R compressed near minimum, or setup deteriorating
+- 1 = speculative, chasing, or thesis weakening — do NOT create, record as SETUP_TOO_WEAK
+
+### 4d — Policy gate: reward:risk check
 
 ```
-direction: LONG or SHORT (based on evidence sentiment)
-entry:        price level where you'd enter (support/resistance, round number, or breakout level)
-target:       exit level based on next resistance/support
-invalidation: level that proves the thesis wrong
-
-evidence:
-  1. [first supporting point from GBrain content]
-  2. [second supporting point — price structure or technical level]
-  3. [third supporting point — macro or sentiment context]
-
-conviction: 1–5
-  5 = all three evidence points strongly align, price at ideal entry
-  4 = two points align, one is neutral
-  3 = mixed signals but net positive
-  2 = weak case, mostly speculative
-  1 = very early stage, monitoring only
+RR = abs(target - entry) / abs(entry - invalidation)
 ```
 
-### 4c — Policy gate: reward:risk check
-
-```
-RR = (target - entry) / (entry - invalidation)   [for LONG]
-RR = (entry - target) / (invalidation - entry)   [for SHORT]
-```
-
-- If RR < 2.0: reject the plan. Note the rejection reason in the announcement.
-- If RR ≥ 2.0: proceed.
-
-### 4d — Apply market risk overlay
-
-Adjust conviction based on market risk score:
-- Risk On: no change
-- Neutral: no change
-- Caution: lower conviction by 1 (minimum 1)
-- Risk Off: lower conviction by 1 (minimum 1) AND flag with ⚠️
+- If RR < 2.0 (LONG) or < 1.5 (SHORT): reject. Note the rejection reason.
+- If RR ≥ minimum: proceed.
 
 ### 4e — Save to GBrain as pending
 
-Write to `plans/<TICKER>`:
+First run `gbrain restore plans/<lowercase-ticker> 2>/dev/null` to restore any soft-deleted version. Then write to `plans/<TICKER>`:
 
 ```yaml
 ---
@@ -128,27 +125,25 @@ entry: <price>
 target: <price>
 invalidation: <price>
 rr_ratio: <float, 2 decimal places>
-conviction: <1-5>
-market_risk_at_creation: <Risk On | Neutral | Caution | Risk Off>
+setup_rating: <1-5>
 status: pending-confirmation
-created_at: <ISO-8601>
-updated_at: <ISO-8601>
 ---
 
-## Evidence
+## Trading Plan — TICKER DIRECTION
 
-1. <point 1>
-2. <point 2>
-3. <point 3>
+**Entry:** $ENTRY | **Target:** $TARGET | **Invalidation:** $INVALIDATION | **R/R:** RR_RATIO
 
-## Risk sizing
+### Conviction
+1. [first conviction point — cite specific source]
+2. [second conviction point — cite specific source]
+3. [third conviction point — cite specific source]
 
-Regular stock: HK$500 risk per trade
-Meme stock: HK$5,000 fixed risk
-
-## Notes
-
-<any additional context>
+### Risks
+- **Company:** [earnings timing from signals, debt level, customer concentration, competitive threat]
+- **Valuation:** [P/E or P/S from signals vs peers; priced for perfection?]
+- **Technical:** [beta from signals, gap risk, easy money already made if extended?]
+- **Catalyst:** [binary event risk or timing uncertainty]
+- **Analyst:** [rotation risk if thesis depends on a specific analyst view]
 ```
 
 ---
