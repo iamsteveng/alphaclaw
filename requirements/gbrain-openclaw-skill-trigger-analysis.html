@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GBrain + OpenClaw: Skill Trigger Analysis</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --border:   #2a2d3a;
+      --accent:   #7c6af7;
+      --accent2:  #4fc3f7;
+      --accent3:  #69e0a5;
+      --warn:     #f7c948;
+      --text:     #e2e4ef;
+      --muted:    #8b8fa8;
+      --code-bg:  #13151f;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+      padding: 0 0 80px;
+    }
+
+    /* ── Header ── */
+    .hero {
+      background: linear-gradient(135deg, #1a1040 0%, #0d1a2e 60%, #0f1117 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 56px 40px 48px;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(124,106,247,0.15);
+      border: 1px solid rgba(124,106,247,0.35);
+      border-radius: 999px;
+      padding: 4px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    .hero h1 {
+      font-size: clamp(24px, 4vw, 42px);
+      font-weight: 800;
+      line-height: 1.15;
+      background: linear-gradient(120deg, #c4b8ff 0%, var(--accent2) 55%, var(--accent3) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 14px;
+    }
+    .hero p {
+      color: var(--muted);
+      max-width: 620px;
+      margin: 0 auto;
+      font-size: 15px;
+    }
+
+    /* ── Layout ── */
+    .container { max-width: 940px; margin: 0 auto; padding: 0 32px; }
+
+    /* ── Section ── */
+    .section {
+      margin-top: 48px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+    }
+    .section-num {
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .section-header h2 {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .section-body { padding: 24px; }
+
+    /* ── Prose ── */
+    p { margin-bottom: 14px; color: var(--text); }
+    p:last-child { margin-bottom: 0; }
+    strong { color: #fff; font-weight: 600; }
+    em { color: var(--accent2); font-style: normal; font-weight: 500; }
+
+    /* ── Code ── */
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      overflow-x: auto;
+      margin: 16px 0;
+      font-size: 13px;
+      line-height: 1.6;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+    code {
+      background: rgba(124,106,247,0.15);
+      border: 1px solid rgba(124,106,247,0.2);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 13px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      color: #c4b8ff;
+    }
+    pre code { background: none; border: none; padding: 0; color: inherit; }
+
+    /* Syntax highlights (manual) */
+    .kw  { color: #c4b8ff; }
+    .str { color: var(--accent3); }
+    .cm  { color: var(--muted); font-style: italic; }
+    .num { color: var(--warn); }
+    .key { color: var(--accent2); }
+    .pn  { color: #f7c948; }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; margin: 16px 0; border-radius: 10px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    thead tr { background: rgba(124,106,247,0.12); }
+    th { padding: 11px 16px; text-align: left; font-weight: 600; color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+    td { padding: 10px 16px; border-top: 1px solid var(--border); color: var(--text); vertical-align: top; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    /* ── Callout ── */
+    .callout {
+      display: flex;
+      gap: 12px;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin: 16px 0;
+      font-size: 13.5px;
+    }
+    .callout.info  { background: rgba(79,195,247,0.08); border: 1px solid rgba(79,195,247,0.25); }
+    .callout.warn  { background: rgba(247,201,72,0.08); border: 1px solid rgba(247,201,72,0.25); }
+    .callout.tip   { background: rgba(105,224,165,0.08); border: 1px solid rgba(105,224,165,0.25); }
+    .callout-icon  { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .callout.info .callout-icon  { color: var(--accent2); }
+    .callout.warn .callout-icon  { color: var(--warn); }
+    .callout.tip  .callout-icon  { color: var(--accent3); }
+
+    /* ── Flow diagram ── */
+    .flow {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 12.5px;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      overflow-x: auto;
+      line-height: 1.65;
+    }
+    .flow .box-title { color: var(--accent); font-weight: 700; }
+    .flow .phase     { color: var(--accent2); }
+    .flow .arrow     { color: var(--muted); }
+    .flow .always    { color: var(--accent3); }
+    .flow .note      { color: var(--muted); font-style: italic; }
+
+    /* ── Layer cards ── */
+    .layers { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+    @media (max-width: 640px) { .layers { grid-template-columns: 1fr; } }
+    .layer-card {
+      border-radius: 10px;
+      padding: 18px;
+      border: 1px solid;
+    }
+    .layer-card.l1 { background: rgba(124,106,247,0.08); border-color: rgba(124,106,247,0.3); }
+    .layer-card.l2 { background: rgba(79,195,247,0.08); border-color: rgba(79,195,247,0.3); }
+    .layer-card h3 { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+    .layer-card.l1 h3 { color: var(--accent); }
+    .layer-card.l2 h3 { color: var(--accent2); }
+    .layer-card p  { font-size: 13px; color: var(--muted); margin: 0; }
+    .layer-card ul { margin: 8px 0 0 0; padding-left: 16px; font-size: 13px; color: var(--text); }
+    .layer-card li { margin-bottom: 4px; }
+
+    /* ── Decision tree ── */
+    .decision-tree {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      line-height: 1.8;
+      overflow-x: auto;
+    }
+
+    /* ── Key insight box ── */
+    .insight {
+      background: linear-gradient(135deg, rgba(124,106,247,0.1) 0%, rgba(79,195,247,0.06) 100%);
+      border: 1px solid rgba(124,106,247,0.3);
+      border-radius: 12px;
+      padding: 20px 22px;
+      margin: 20px 0;
+    }
+    .insight h4 { color: var(--accent); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+    .insight p  { font-size: 14px; color: var(--text); margin: 0; }
+
+    /* ── Pill tags ── */
+    .pill {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .pill.purple { background: rgba(124,106,247,0.2); color: var(--accent); }
+    .pill.blue   { background: rgba(79,195,247,0.2); color: var(--accent2); }
+    .pill.green  { background: rgba(105,224,165,0.2); color: var(--accent3); }
+    .pill.yellow { background: rgba(247,201,72,0.2); color: var(--warn); }
+
+    /* ── Always-on cards ── */
+    .always-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 16px 0; }
+    @media (max-width: 540px) { .always-cards { grid-template-columns: 1fr; } }
+    .always-card {
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      padding: 16px;
+      background: rgba(105,224,165,0.05);
+      border-color: rgba(105,224,165,0.2);
+    }
+    .always-card h4 { font-size: 14px; font-weight: 700; color: var(--accent3); margin-bottom: 6px; }
+    .always-card p  { font-size: 13px; color: var(--muted); margin: 0; }
+
+    /* ── Footer ── */
+    .footer {
+      margin-top: 64px;
+      border-top: 1px solid var(--border);
+      padding: 24px 40px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .footer a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-badge">&#9889; Architecture Analysis</div>
+  <h1>GBrain + OpenClaw<br>Skill Trigger Resolution</h1>
+  <p>How OpenClaw discovers gbrain skills, injects them into the agent context,
+     and how the two-layer resolver picks the right skill on every message.</p>
+</div>
+
+<div class="container">
+
+  <!-- ─────────────────────────────────────── -->
+  <!-- Section 1: Installation Bridge          -->
+  <!-- ─────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">1</div>
+      <h2>The Installation Bridge — <code>openclaw.plugin.json</code></h2>
+    </div>
+    <div class="section-body">
+      <p>gbrain declares itself to OpenClaw as a <code>bundle-plugin</code> via
+      <code>openclaw.plugin.json</code>. This file is the handshake between the two systems
+      and wires two things simultaneously:</p>
+
+      <pre><span class="pn">{</span>
+  <span class="key">"name"</span>: <span class="str">"gbrain"</span>,
+  <span class="key">"family"</span>: <span class="str">"bundle-plugin"</span>,
+  <span class="key">"mcpServers"</span>: <span class="pn">{</span>
+    <span class="key">"gbrain"</span>: <span class="pn">{</span> <span class="key">"command"</span>: <span class="str">"./bin/gbrain"</span>, <span class="key">"args"</span>: [<span class="str">"serve"</span>] <span class="pn">}</span>
+  <span class="pn">}</span>,
+  <span class="key">"skills"</span>: [
+    <span class="str">"skills/capture"</span>, <span class="str">"skills/query"</span>, <span class="str">"skills/signal-detector"</span>,
+    <span class="str">"skills/brain-ops"</span>, <span class="cm">/* ... 43 total ... */</span>
+  ],
+  <span class="key">"shared_deps"</span>: [
+    <span class="str">"skills/conventions"</span>,
+    <span class="str">"skills/_AGENT_README.md"</span>,   <span class="cm">// ← the routing contract</span>
+    <span class="str">"skills/_brain-filing-rules.md"</span>,
+    <span class="str">"skills/_output-rules.md"</span>
+  ],
+  <span class="key">"resolver"</span>: <span class="str">"RESOLVER.md"</span>
+<span class="pn">}</span></pre>
+
+      <div class="layers">
+        <div class="layer-card l1">
+          <h3>&#9889; MCP Server</h3>
+          <p><code>./bin/gbrain serve</code> registers as an MCP server, exposing the brain tools
+          the LLM calls during skill execution: <code>get_page</code>, <code>put_page</code>,
+          <code>add_link</code>, <code>add_timeline_entry</code>, etc.</p>
+        </div>
+        <div class="layer-card l2">
+          <h3>&#128218; Skills List</h3>
+          <p>The 43 skill directories gbrain contributes to the workspace.
+          Each one will be scanned by OpenClaw's runtime loader and injected
+          into the agent's system prompt.</p>
+        </div>
+      </div>
+
+      <p>On every AlphaClaw startup, <strong>syncWorkspaceSkills</strong>
+      (called from <code>syncBootstrapPromptFiles</code>) re-syncs
+      <code>lib/setup/skills/</code> → <code>workspace/skills/</code>, guaranteeing
+      skills survive container restarts. Shared dependencies
+      (<code>_AGENT_README.md</code>, <code>RESOLVER.md</code>, <code>conventions/</code>)
+      are copied alongside.</p>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <!-- Section 2: Discovery                    -->
+  <!-- ─────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">2</div>
+      <h2>Skill Discovery — OpenClaw's Runtime Scanner</h2>
+    </div>
+    <div class="section-body">
+      <p>On session start, OpenClaw calls
+      <code>loadWorkspaceSkillEntries</code> → <code>loadSkillsFromDirSafe</code>,
+      which walks <code>&lt;workspaceDir&gt;/skills/</code> and runs
+      <code>loadSingleSkillDirectory</code> for each subdirectory:</p>
+
+      <pre><span class="cm">// Simplified from OpenClaw dist/workspace-DkDBQCx-.js</span>
+<span class="kw">function</span> <span class="pn">loadSingleSkillDirectory</span>(params) <span class="pn">{</span>
+  <span class="cm">// 1. Read SKILL.md (symlink-rejected, size-capped)</span>
+  <span class="kw">const</span> raw = readSkillFileSync(path.join(params.skillDir, <span class="str">"SKILL.md"</span>));
+  <span class="kw">if</span> (!raw) <span class="kw">return</span> null;
+
+  <span class="cm">// 2. Parse YAML frontmatter</span>
+  <span class="kw">const</span> frontmatter = parseFrontmatter(raw);
+
+  <span class="cm">// 3. Extract name + description (ONLY these two go into the prompt)</span>
+  <span class="kw">const</span> name = frontmatter.name?.trim() || path.basename(params.skillDir);
+  <span class="kw">const</span> description = frontmatter.description?.trim();
+  <span class="kw">if</span> (!name || !description) <span class="kw">return</span> null;
+
+  <span class="cm">// 4. Resolve invocation policy (disable-model-invocation flag)</span>
+  <span class="kw">const</span> invocation = resolveSkillInvocationPolicy(frontmatter);
+
+  <span class="kw">return</span> <span class="pn">{</span>
+    name, description,
+    filePath: path.resolve(skillFilePath),
+    baseDir:  path.resolve(params.skillDir),
+    source:   params.source,
+    disableModelInvocation: invocation.disableModelInvocation
+  <span class="pn">}</span>;
+<span class="pn">}</span></pre>
+
+      <div class="callout warn">
+        <div class="callout-icon">&#9888;</div>
+        <div><strong>Only <code>name</code> and <code>description</code> reach the prompt.</strong>
+        The <code>triggers:</code>, <code>tools:</code>, <code>mutating:</code>, and
+        <code>writes_pages:</code> frontmatter fields are extracted for policy enforcement
+        internally but are <em>not</em> injected into the LLM context directly.
+        The full frontmatter remains available for <code>shouldIncludeSkill</code> filtering.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <!-- Section 3: Prompt Injection             -->
+  <!-- ─────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">3</div>
+      <h2>Prompt Injection — The <code>&lt;available_skills&gt;</code> Block</h2>
+    </div>
+    <div class="section-body">
+      <p><code>buildWorkspaceSkillsPrompt</code> calls <code>formatSkillsForPrompt</code>,
+      which appends an XML block to the agent's system prompt on every new session:</p>
+
+      <pre><span class="cm">The following skills provide specialized instructions for specific tasks.</span>
+<span class="cm">Use the read tool to load a skill's file when the task matches its description.</span>
+<span class="cm">When a skill file references a relative path, resolve it against the skill directory</span>
+<span class="cm">(parent of SKILL.md) and use that absolute path in tool commands.</span>
+
+<span class="key">&lt;available_skills&gt;</span>
+  <span class="kw">&lt;skill&gt;</span>
+    <span class="str">&lt;name&gt;</span>capture<span class="str">&lt;/name&gt;</span>
+    <span class="str">&lt;description&gt;</span>Save any thought or content into the brain via one CLI
+      command. The single human-facing entrypoint that replaces "put_page vs
+      commit-then-sync vs autopilot-wait" with one command that just works.<span class="str">&lt;/description&gt;</span>
+    <span class="str">&lt;location&gt;</span>/workspace/skills/capture/SKILL.md<span class="str">&lt;/location&gt;</span>
+  <span class="kw">&lt;/skill&gt;</span>
+  <span class="kw">&lt;skill&gt;</span>
+    <span class="str">&lt;name&gt;</span>signal-detector<span class="str">&lt;/name&gt;</span>
+    <span class="str">&lt;description&gt;</span>Always-on ambient signal capture. Fires on every message
+      to detect original thinking and entity mentions.<span class="str">&lt;/description&gt;</span>
+    <span class="str">&lt;location&gt;</span>/workspace/skills/signal-detector/SKILL.md<span class="str">&lt;/location&gt;</span>
+  <span class="kw">&lt;/skill&gt;</span>
+  <span class="cm">  &lt;!-- ... all 43 skills ... --&gt;</span>
+<span class="key">&lt;/available_skills&gt;</span></pre>
+
+      <div class="insight">
+        <h4>&#128161; Key insight</h4>
+        <p>This XML block is the <strong>primary dispatch surface</strong>. The LLM sees
+        every skill's name + description and uses semantic reasoning to decide which
+        <code>&lt;location&gt;</code> to read. The instruction "use the read tool to load a
+        skill's file" means the full SKILL.md body — including Phases, Contract, and
+        Anti-Patterns — is only consumed <em>after</em> the skill is selected, not
+        upfront.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <!-- Section 4: Two-Layer Trigger System     -->
+  <!-- ─────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">4</div>
+      <h2>The Two-Layer Trigger System</h2>
+    </div>
+    <div class="section-body">
+      <p>Trigger resolution uses two complementary layers. Neither layer alone is
+      sufficient — together they handle both typed commands and natural language intent.</p>
+
+      <div class="layers">
+        <div class="layer-card l1">
+          <h3>Layer 1 — OpenClaw Runtime</h3>
+          <p><em>Description-based, implicit matching</em></p>
+          <ul>
+            <li>LLM scans <code>&lt;available_skills&gt;</code> descriptions</li>
+            <li>Semantic / fuzzy reasoning over natural language</li>
+            <li>Coarse — catches intent even without exact phrase match</li>
+            <li>Injected instruction: <em>"use read tool when task matches description"</em></li>
+          </ul>
+        </div>
+        <div class="layer-card l2">
+          <h3>Layer 2 — gbrain Agent Instruction</h3>
+          <p><em>Frontmatter triggers, explicit phrase matching</em></p>
+          <ul>
+            <li>LLM reads <code>_AGENT_README.md</code> (scaffolded shared dep)</li>
+            <li>Instructed to walk <code>triggers:</code> arrays in SKILL.md frontmatter</li>
+            <li>Substring match as baseline; semantic similarity on top</li>
+            <li>Precise — catches exact user phrases from MECE trigger lists</li>
+          </ul>
+        </div>
+      </div>
+
+      <p>Each skill's frontmatter declares its explicit trigger vocabulary:</p>
+
+      <pre><span class="cm">---</span>
+<span class="key">name</span>: <span class="str">capture</span>
+<span class="key">triggers</span>:
+  - <span class="str">"capture this"</span>
+  - <span class="str">"save this thought"</span>
+  - <span class="str">"remember this"</span>
+  - <span class="str">"drop this in the inbox"</span>
+  - <span class="str">"save to brain"</span>
+<span class="key">writes_pages</span>:
+  - <span class="str">"inbox/*"</span>
+<span class="cm">---</span></pre>
+
+      <div class="callout info">
+        <div class="callout-icon">&#8505;</div>
+        <div><strong>RESOLVER.md is documentation, not dispatch.</strong>
+        Before v0.36, RESOLVER.md was a managed routing table the agent parsed directly.
+        From v0.36+, <code>_AGENT_README.md</code> explicitly tells the agent:
+        <em>"Do NOT look for a managed-block table inside RESOLVER.md or AGENTS.md.
+        Routing lives in frontmatter now."</em>
+        RESOLVER.md is auto-maintained as a human-readable reference.</div>
+      </div>
+
+      <p><strong>Worked example — "save this to brain":</strong></p>
+
+      <div class="decision-tree">Layer 1 (description scan):
+  capture     → "Save any thought or content..." → <span style="color:var(--accent3)">candidate ✓</span>
+  ingest      → "Route content to specialized..."→ <span style="color:var(--accent3)">candidate ✓</span>
+  brain-ops   → "Brain-first lookup, read-enrich" → <span style="color:var(--muted)">no match</span>
+
+Layer 2 (frontmatter triggers):
+  capture/SKILL.md  triggers: ["save this thought", "save to brain"]
+    → "save to brain" substring hit                → <span style="color:var(--accent3)">strong match ✓</span>
+  ingest/SKILL.md   triggers: ["ingest this", "save this to brain"]
+    → "save this to brain" substring hit           → <span style="color:var(--accent3)">weaker match</span>
+
+Disambiguation:
+  capture is more specific to single-thought saves → <span style="color:var(--warn)">invoke capture ★</span></div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <!-- Section 5: Disambiguation Rules         -->
+  <!-- ─────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">5</div>
+      <h2>Disambiguation Rules</h2>
+    </div>
+    <div class="section-body">
+      <p>When multiple skills match, <code>RESOLVER.md</code> defines the tiebreak order.
+      These rules are embedded in the agent's instruction set via the scaffolded file:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th>Rule</th>
+              <th>Example</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="pill purple">1 — First</span></td>
+              <td><strong>Specificity wins</strong> — prefer the most specific skill</td>
+              <td><code>meeting-ingestion</code> beats <code>ingest</code></td>
+            </tr>
+            <tr>
+              <td><span class="pill blue">2</span></td>
+              <td><strong>URL content type routing</strong> — if a URL is present, classify it</td>
+              <td>YouTube URL → <code>media-ingest</code>; article link → <code>idea-ingest</code></td>
+            </tr>
+            <tr>
+              <td><span class="pill blue">3</span></td>
+              <td><strong>Entity type routing</strong> — person/company name present</td>
+              <td>Check if <code>enrich</code> or <code>query</code> is the better fit</td>
+            </tr>
+            <tr>
+              <td><span class="pill green">4</span></td>
+              <td><strong>Chaining is explicit</strong> — follow Phases section of matched skill</td>
+              <td>Each skill names what to chain into next</td>
+            </tr>
+            <tr>
+              <td><span class="pill yellow">5 — Last</span></td>
+              <td><strong>When in doubt</strong> → invoke the choice-gate pattern</td>
+              <td><code>ask-user/SKILL.md</code> — present 2–4 options, stop until user replies</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <!-- Section 6: Always-On Skills             -->
+  <!-- ─────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">6</div>
+      <h2>Always-On Skills — Pre-Dispatch Parallel Execution</h2>
+    </div>
+    <div class="section-body">
+      <p>Two skills <strong>bypass trigger matching entirely</strong>. They fire on every
+      inbound message, spawned in parallel, non-blocking — they never delay the
+      user-facing response:</p>
+
+      <div class="always-cards">
+        <div class="always-card">
+          <h4>signal-detector</h4>
+          <p>Ambient entity/signal capture. Detects original thinking, entity mentions,
+          and notable concepts in every message. The brain compounds via this skill.</p>
+        </div>
+        <div class="always-card">
+          <h4>brain-ops</h4>
+          <p>Brain-first lookup on any brain read/write/lookup/citation. Enforces
+          the "check brain before external API" invariant across all skills.</p>
+        </div>
+      </div>
+
+      <div class="callout tip">
+        <div class="callout-icon">&#10003;</div>
+        <div>These are declared in RESOLVER.md under "Always-on (every message)" and
+        confirmed by <code>signal-detector</code>'s description: <em>"Fires on every
+        message."</em> They are invariants, not options — routing them through trigger
+        matching would defeat their purpose as ambient background processes.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <!-- Section 7: Skill Execution              -->
+  <!-- ─────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">7</div>
+      <h2>Skill Execution — Read-Then-Follow Cycle</h2>
+    </div>
+    <div class="section-body">
+      <p>Once a skill is selected, execution is a strict read-then-follow cycle:</p>
+
+      <pre><span class="num">1.</span> LLM calls: <span class="kw">read</span>(<span class="str">"/workspace/skills/capture/SKILL.md"</span>)
+   <span class="cm">← uses OpenClaw's built-in read tool</span>
+
+<span class="num">2.</span> Reads <span class="kw">## Contract</span> — confirms guarantees match the task
+
+<span class="num">3.</span> Executes <span class="kw">## Phases</span> step by step:
+   Phase 1: detect input type
+   Phase 2: call MCP tool → <span class="key">gbrain capture "..."</span>
+   Phase 3: verify receipt
+
+<span class="num">4.</span> Calls gbrain MCP tools as needed:
+   <span class="str">get_page</span>, <span class="str">put_page</span>, <span class="str">add_link</span>, <span class="str">add_timeline_entry</span>, ...
+
+<span class="num">5.</span> Consults <span class="kw">_brain-filing-rules.md</span> on every write
+   <span class="cm">← "file by PRIMARY SUBJECT, not format"</span>
+
+<span class="num">6.</span> Follows chaining instructions if Phases says to:
+   <span class="cm">"for meeting data, chain into skills/meeting-ingestion/SKILL.md"</span></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>MCP Tool</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>get_page</code></td><td>Read a page from the brain DB</td></tr>
+            <tr><td><code>put_page</code></td><td>Write/update a brain page (rewrite State, never append)</td></tr>
+            <tr><td><code>add_timeline_entry</code></td><td>Append to entity timeline (reverse-chronological)</td></tr>
+            <tr><td><code>add_link</code></td><td>Create typed link between entities (Iron Law back-links)</td></tr>
+            <tr><td><code>get_backlinks</code></td><td>Retrieve back-links for a page</td></tr>
+            <tr><td><code>search</code></td><td>Hybrid RAG search (embedding + keyword + rerank)</td></tr>
+            <tr><td><code>put_raw_data</code></td><td>Store raw API responses for provenance</td></tr>
+            <tr><td><code>sync_brain</code></td><td>Trigger brain sync to disk</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <!-- Section 8: Complete Flow Diagram        -->
+  <!-- ─────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">8</div>
+      <h2>Complete End-to-End Flow</h2>
+    </div>
+    <div class="section-body">
+      <div class="flow">
+<span class="box-title">┌─ INSTALL TIME ──────────────────────────────────────────────────────┐</span>
+<span class="phase">│  gbrain skillpack scaffold --all                                    │</span>
+<span class="phase">│    → copies skills/*/  into  workspace/skills/                       │</span>
+<span class="phase">│    → copies _AGENT_README.md, RESOLVER.md, conventions/             │</span>
+<span class="phase">│                                                                      │</span>
+<span class="phase">│  AlphaClaw syncWorkspaceSkills  (every startup)                      │</span>
+<span class="phase">│    → lib/setup/skills/ ──────→ workspace/skills/                    │</span>
+<span class="box-title">└──────────────────────────────────────────────────────────────────────┘</span>
+                                    <span class="arrow">│</span>
+                                    <span class="arrow">▼</span>
+<span class="box-title">┌─ SESSION START ──────────────────────────────────────────────────────┐</span>
+<span class="phase">│  loadWorkspaceSkillEntries                                           │</span>
+<span class="phase">│    → walk workspace/skills/*/SKILL.md                               │</span>
+<span class="phase">│    → parseFrontmatter  →  extract name + description                 │</span>
+<span class="phase">│    → filter via shouldIncludeSkill                                   │</span>
+<span class="phase">│                                                                      │</span>
+<span class="phase">│  formatSkillsForPrompt                                               │</span>
+<span class="phase">│    → build &lt;available_skills&gt; XML block                             │</span>
+<span class="phase">│    → inject into agent system prompt                                 │</span>
+<span class="box-title">└──────────────────────────────────────────────────────────────────────┘</span>
+                                    <span class="arrow">│</span>
+                                    <span class="arrow">▼</span>
+<span class="box-title">┌─ USER MESSAGE ARRIVES ───────────────────────────────────────────────┐</span>
+<span class="always">│                                                                      │</span>
+<span class="always">│  ALWAYS-ON  (parallel, non-blocking — fire unconditionally):         │</span>
+<span class="always">│    → signal-detector                                                 │</span>
+<span class="always">│    → brain-ops  (if brain operation detected)                        │</span>
+<span class="always">│                                                                      │</span>
+<span class="phase">│  Layer 1 — Description match  (OpenClaw):                           │</span>
+<span class="phase">│    LLM reasons over &lt;available_skills&gt; descriptions                 │</span>
+<span class="phase">│    → candidate skill(s) identified via semantic matching             │</span>
+<span class="phase">│                                                                      │</span>
+<span class="phase">│  Layer 2 — Trigger match  (gbrain _AGENT_README.md):                │</span>
+<span class="phase">│    LLM walks triggers[] frontmatter in each candidate's SKILL.md    │</span>
+<span class="phase">│    → substring / semantic match against trigger phrases              │</span>
+<span class="phase">│                                                                      │</span>
+<span class="phase">│  Disambiguation  (RESOLVER.md rules):                               │</span>
+<span class="phase">│    specificity → content type → entity type → ask-user              │</span>
+<span class="box-title">└──────────────────────────────────────────────────────────────────────┘</span>
+                                    <span class="arrow">│</span>
+                                    <span class="arrow">▼</span>
+<span class="box-title">┌─ SKILL EXECUTION ────────────────────────────────────────────────────┐</span>
+<span class="phase">│  LLM: read(skill.filePath)      ← OpenClaw read tool                │</span>
+<span class="phase">│  LLM: follow ## Phases                                               │</span>
+<span class="phase">│  LLM: call MCP tools as needed                                       │</span>
+<span class="phase">│    → gbrain serve  (get_page, put_page, add_link, ...)              │</span>
+<span class="phase">│  LLM: consult _brain-filing-rules.md on every write                 │</span>
+<span class="phase">│  LLM: chain to next skill if Phases says to                          │</span>
+<span class="box-title">└──────────────────────────────────────────────────────────────────────┘</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────────────────────────────── -->
+  <!-- Section 9: Key Architectural Decisions  -->
+  <!-- ─────────────────────────────────────── -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">9</div>
+      <h2>Key Architectural Decisions</h2>
+    </div>
+    <div class="section-body">
+
+      <div class="insight">
+        <h4>Why frontmatter triggers, not RESOLVER.md?</h4>
+        <p>RESOLVER.md (pre-v0.36) required manual synchronization between the routing table
+        and each skill's actual intent — they could drift. With frontmatter triggers (v0.36+),
+        each skill <em>owns its routing contract</em>. RESOLVER.md is generated documentation;
+        frontmatter is the source of truth. MECE validation at skill creation time enforces
+        no trigger overlap across the entire skill set.</p>
+      </div>
+
+      <div class="insight">
+        <h4>Why Layer 1 (description) AND Layer 2 (triggers)?</h4>
+        <p>Layer 1 is coarse but zero-cost — the LLM already scans <code>&lt;available_skills&gt;</code>.
+        Layer 2 is precise — explicit trigger strings reduce ambiguous multi-skill matches.
+        Together they handle typed commands ("capture this") and natural language intent
+        ("I'd like to save this article I'm reading") without requiring an exact phrase.</p>
+      </div>
+
+      <div class="insight">
+        <h4>Why always-on skills bypass trigger matching?</h4>
+        <p>Signal detection and brain-first lookup are <em>invariants</em>, not options.
+        Routing them through trigger matching means they only fire when the user explicitly
+        invokes them — defeating their purpose as ambient background processes that make the
+        brain compound over time. They are spawned in parallel and never block the
+        user-facing response.</p>
+      </div>
+
+      <div class="insight">
+        <h4>The <code>disable-model-invocation</code> escape hatch</h4>
+        <p>Skills that are purely programmatic (e.g., <code>publish</code>, which generates
+        static HTML with zero LLM calls) set <code>disable-model-invocation: true</code> in
+        frontmatter. OpenClaw's <code>resolveSkillInvocationPolicy</code> picks this up and
+        routes them to slash-command or direct CLI invocation rather than LLM description
+        matching.</p>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<div class="footer">
+  Analysis based on <a href="https://github.com/garrytan/gbrain">garrytan/gbrain</a>
+  (v0.32.3 · master branch) and OpenClaw runtime dist files.
+  gbrain skill routing migrated from managed-block RESOLVER.md to
+  frontmatter-based dispatch in <strong>v0.36</strong>.
+</div>
+
+</body>
+</html>
