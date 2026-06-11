@@ -23,8 +23,7 @@ Runs ~19:30 HKT daily (between HK market close and US market open). Reads GBrain
     gbrain get watchlist/current
     Extract active tickers and their conviction levels.
 
-1c. Get the current market risk score:
-    python3 /data/.openclaw/workspace/skills/market-risk-score/market_risk_score.py --json
+1c. Get the current market risk score.
     Note the classification (Risk On / Neutral / Caution / Risk Off).
 ```
 
