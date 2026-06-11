@@ -76,11 +76,7 @@ Do NOT generate the new plan. Include this conflict message in the Telegram anno
 
 ### 4b — Fetch signals (MANDATORY — run before any level determination)
 
-You MUST fetch live signals for the ticker before determining entry, target, or invalidation. Run:
-
-`python3 /data/.openclaw/workspace/skills/stocks-signals/finnhub_signals.py TICKER --json`
-
-Replace TICKER with the actual symbol. Capture the full JSON output. Use it for: current price, RSI(14) and rsi_zone, SMA10/20/50/200 positions, analyst consensus (buy/hold/sell counts + consensus label), next earnings date (earnings_days_away), beta, recent news headlines, P/E, P/S. If the script fails or FINNHUB_API_KEY is unset, skip this ticker (note as NO_SIGNALS_DATA). Do NOT proceed to Step 4c without running this command first.
+Get stocks signals for the ticker. Use the output for: current price, RSI(14) and rsi_zone, SMA10/20/50/200 positions, analyst consensus (buy/hold/sell counts + consensus label), next earnings date (earnings_days_away), beta, recent news headlines, P/E, P/S. If signals are unavailable, skip this ticker (note as NO_SIGNALS_DATA). Do NOT proceed to Step 4c without fetching signals first.
 
 ### 4c — Generate the trading plan
 
