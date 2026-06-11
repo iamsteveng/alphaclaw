@@ -1,6 +1,9 @@
 ---
 name: market-risk-score
 description: Calculate US market risk score (Risk On/Neutral/Caution/Risk Off) from DXY, HYG, SPY, VIX using Yahoo Finance data. Invoke when the user asks for market risk, risk score, risk on/off, or DXY/HYG/SPY/VIX composite signals.
+triggers:
+  - "market risk score"
+  - "market risk"
 ---
 
 # Market Risk Score

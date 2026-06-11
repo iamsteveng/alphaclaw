@@ -45,3 +45,15 @@ Whenever you do this, end your message with a **Changes committed** summary. Use
 Changes committed ([abc1234](commit url)): <-- linked abbreviated hash, no backticks
 • path/or/resource (new|edit|delete) — brief description
 ```
+
+### Skill Trigger Routing
+
+On every user message, also match against the `triggers:` array in each skill's SKILL.md frontmatter. The skill locations are in `<available_skills>` — read each SKILL.md and check its frontmatter.
+
+Matching rules (identical to gbrain's routing protocol):
+- Substring match is the baseline
+- Semantic similarity (keyword expansion) is fine on top
+- When a trigger matches, read the full SKILL.md from its `<location>` and follow its `## Phases` / `## Workflow`
+- When multiple triggers match, prefer the most specific skill
+
+This supplements Layer 1 description matching — it fires in addition to it, not instead of it.
