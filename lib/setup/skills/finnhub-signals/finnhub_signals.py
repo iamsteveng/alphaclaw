@@ -162,16 +162,6 @@ def extract_metrics(data: dict) -> dict:
     }
 
 
-def extract_price_target(data: dict) -> dict:
-    pt = data.get("price_target") or {}
-    return {
-        "high":   _safe_float(pt, "targetHigh"),
-        "low":    _safe_float(pt, "targetLow"),
-        "mean":   _safe_float(pt, "targetMean"),
-        "median": _safe_float(pt, "targetMedian"),
-    }
-
-
 def extract_recommendations(data: dict) -> dict:
     recs = data.get("recommendations")
     if not recs or len(recs) == 0:
@@ -213,79 +203,6 @@ def _analyst_consensus(rec: dict) -> str:
     return "Mixed"
 
 
-def extract_technicals(data: dict, current_price) -> dict:
-    rsi_val  = _last((data.get("rsi") or {}).get("rsi"))
-    macd_hist = _last((data.get("macd") or {}).get("macdHist"))
-    macd_line = _last((data.get("macd") or {}).get("macd"))
-    macd_sig  = _last((data.get("macd") or {}).get("macdSignal"))
-    bb_upper  = _last((data.get("bbands") or {}).get("upperband"))
-    bb_mid    = _last((data.get("bbands") or {}).get("middleband"))
-    bb_lower  = _last((data.get("bbands") or {}).get("lowerband"))
-    sma20_val = _last((data.get("sma20") or {}).get("sma"))
-    sma50_val = _last((data.get("sma50") or {}).get("sma"))
-    ema20_val = _last((data.get("ema20") or {}).get("ema"))
-
-    rsi_zone = None
-    if rsi_val is not None:
-        if rsi_val < 40:
-            rsi_zone = "Oversold"
-        elif rsi_val > 60:
-            rsi_zone = "Overbought"
-        else:
-            rsi_zone = "Neutral"
-
-    macd_bullish = None
-    if macd_hist is not None:
-        macd_bullish = macd_hist > 0
-
-    above_sma20 = (current_price is not None and sma20_val is not None
-                   and current_price > sma20_val)
-    above_sma50 = (current_price is not None and sma50_val is not None
-                   and current_price > sma50_val)
-    above_ema20 = (current_price is not None and ema20_val is not None
-                   and current_price > ema20_val)
-
-    return {
-        "rsi14":             rsi_val,
-        "rsi_zone":          rsi_zone,
-        "macd_hist":         macd_hist,
-        "macd_line":         macd_line,
-        "macd_signal":       macd_sig,
-        "macd_signal_bullish": macd_bullish,
-        "bb_upper":          bb_upper,
-        "bb_mid":            bb_mid,
-        "bb_lower":          bb_lower,
-        "sma20":             sma20_val,
-        "sma50":             sma50_val,
-        "ema20":             ema20_val,
-        "above_sma20":       above_sma20,
-        "above_sma50":       above_sma50,
-        "above_ema20":       above_ema20,
-    }
-
-
-def extract_support_resistance(data: dict, current_price) -> dict:
-    sr = data.get("sr") or {}
-    levels = sr.get("levels") or []
-    try:
-        levels = sorted(float(x) for x in levels if x is not None)
-    except (TypeError, ValueError):
-        levels = []
-
-    resistance = []
-    support = []
-    if current_price is not None:
-        for lv in levels:
-            if lv > current_price:
-                resistance.append(lv)
-            elif lv < current_price:
-                support.append(lv)
-        resistance = resistance[:2]   # up to 2 above
-        support = list(reversed(support[-2:]))  # up to 2 below, nearest first
-
-    return {"resistance": resistance, "support": support}
-
-
 def extract_news(data: dict) -> list:
     items = data.get("news") or []
     if not isinstance(items, list):
@@ -310,18 +227,6 @@ def extract_news(data: dict) -> list:
     # Sort descending by datetime, take top 5
     result.sort(key=lambda x: x.get("datetime") or 0, reverse=True)
     return result[:5]
-
-
-def extract_sentiment(data: dict) -> dict:
-    s = data.get("sentiment") or {}
-    buzz = s.get("buzz") or {}
-    sent = s.get("sentiment") or {}
-    return {
-        "buzz":           _safe_float(buzz, "buzz"),
-        "articles_week":  buzz.get("articlesInLastWeek"),
-        "bullish_pct":    _safe_float(sent, "bullishPercent"),
-        "bearish_pct":    _safe_float(sent, "bearishPercent"),
-    }
 
 
 def extract_earnings(data: dict) -> dict:
