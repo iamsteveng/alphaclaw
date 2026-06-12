@@ -2,6 +2,7 @@
 """
 Finnhub Signals — real-time price, technicals, fundamentals, analyst data,
 news, and sentiment for a stock ticker via the Finnhub free-tier API.
+Falls back to Yahoo Finance when Finnhub has no data for the ticker.
 
 Usage:
   python3 finnhub_signals.py AAPL
@@ -65,7 +66,7 @@ def _last(arr):
 
 
 # ---------------------------------------------------------------------------
-# Yahoo Finance — daily closes for technical indicators
+# Yahoo Finance — chart data (closes + meta) for technicals and price fallback
 # ---------------------------------------------------------------------------
 
 _YF_URL_1Y = (
@@ -74,8 +75,15 @@ _YF_URL_1Y = (
 )
 
 
-def fetch_yf_closes(ticker: str) -> list:
-    """Fetch ~1 year of daily closing prices from Yahoo Finance (no auth needed)."""
+def fetch_yf_data(ticker: str) -> dict:
+    """Fetch ~1 year of daily chart data from Yahoo Finance (no auth needed).
+
+    Returns {"closes": [...], "meta": {...}} where:
+      - closes: list of daily closing prices (up to ~252 values)
+      - meta:   chart metadata with regularMarketPrice, 52W range, name, etc.
+
+    Both keys are always present; empty list / empty dict on failure.
+    """
     url = _YF_URL_1Y.format(symbol=urllib.parse.quote(ticker, safe=""))
     req = urllib.request.Request(url, headers={
         "User-Agent": "Mozilla/5.0 (compatible; finnhub-signals/1.0)",
@@ -86,17 +94,23 @@ def fetch_yf_closes(ticker: str) -> list:
             data = json.loads(resp.read())
     except (urllib.error.HTTPError, urllib.error.URLError,
             TimeoutError, json.JSONDecodeError, ValueError):
-        return []
+        return {"closes": [], "meta": {}}
     try:
         result = (data.get("chart") or {}).get("result") or []
         if not result:
-            return []
-        quotes = (result[0].get("indicators") or {}).get("quote") or []
-        if not quotes:
-            return []
-        return [c for c in (quotes[0].get("close") or []) if c is not None]
+            return {"closes": [], "meta": {}}
+        r = result[0]
+        quotes = (r.get("indicators") or {}).get("quote") or []
+        closes = [c for c in (quotes[0].get("close") or []) if c is not None] if quotes else []
+        meta = r.get("meta") or {}
+        return {"closes": closes, "meta": meta}
     except Exception:
-        return []
+        return {"closes": [], "meta": {}}
+
+
+def fetch_yf_closes(ticker: str) -> list:
+    """Compatibility shim — returns only the closes list from fetch_yf_data."""
+    return fetch_yf_data(ticker)["closes"]
 
 
 def _compute_sma(closes: list, period: int):
@@ -148,17 +162,65 @@ def compute_technicals(closes: list, current_price) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Data fetching
+# Yahoo Finance fallback extraction from chart meta
+# Used when Finnhub returns no data for the ticker (e.g. small/OTC stocks).
+# The v8 chart meta is auth-free and provides: current price, intraday high/low,
+# previous close, 52W range, and company name.
+# ---------------------------------------------------------------------------
+
+def _is_finnhub_data_missing(price: dict) -> bool:
+    """Return True when Finnhub returned no usable price data for this ticker."""
+    current = price.get("current")
+    return current is None or current == 0
+
+
+def extract_yf_price(meta: dict) -> dict:
+    """Extract price fields from Yahoo Finance v8 chart meta."""
+    current   = meta.get("regularMarketPrice")
+    prev      = meta.get("chartPreviousClose")
+    change    = round(current - prev, 4) if (current is not None and prev is not None) else None
+    change_pct = round(change / prev * 100, 4) if (change is not None and prev) else None
+    return {
+        "current":    current,
+        "open":       None,  # not in chart meta; would need a separate intraday request
+        "high":       meta.get("regularMarketDayHigh"),
+        "low":        meta.get("regularMarketDayLow"),
+        "prev_close": prev,
+        "change_pct": change_pct,
+        "change":     change,
+    }
+
+
+def extract_yf_profile(meta: dict) -> dict:
+    """Extract company profile from Yahoo Finance v8 chart meta."""
+    return {
+        "name":       meta.get("longName") or meta.get("shortName"),
+        "industry":   None,  # not in chart meta
+        "market_cap": None,  # not in chart meta
+    }
+
+
+def extract_yf_metrics(meta: dict) -> dict:
+    """Extract metrics from Yahoo Finance v8 chart meta."""
+    return {
+        "week52_high":  meta.get("fiftyTwoWeekHigh"),
+        "week52_low":   meta.get("fiftyTwoWeekLow"),
+        "beta":         None,  # not in chart meta
+        "pe":           None,
+        "pb":           None,
+        "ps":           None,
+        "gross_margin": None,
+        "net_margin":   None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Finnhub data fetching
 # ---------------------------------------------------------------------------
 
 def fetch_all(ticker: str, api_key: str) -> dict:
     """Fetch all Finnhub endpoints for ticker. Returns raw data dict."""
     today = datetime.date.today()
-    ts_to = int(datetime.datetime(today.year, today.month, today.day,
-                                  23, 59, 59).timestamp())
-    date_90d_ago = today - datetime.timedelta(days=90)
-    ts_from = int(datetime.datetime(date_90d_ago.year, date_90d_ago.month,
-                                    date_90d_ago.day, 0, 0, 0).timestamp())
     date_90d_out = today + datetime.timedelta(days=90)
 
     data = {}
@@ -175,7 +237,7 @@ def fetch_all(ticker: str, api_key: str) -> dict:
     # 4. Analyst recommendations
     data["recommendations"] = _get("/stock/recommendation", {"symbol": ticker}, api_key)
 
-    # 6. Company news (last 7 days)
+    # 5. Company news (last 7 days)
     date_7d_ago = today - datetime.timedelta(days=7)
     data["news"] = _get("/company-news", {
         "symbol": ticker,
@@ -183,7 +245,7 @@ def fetch_all(ticker: str, api_key: str) -> dict:
         "to": today.isoformat(),
     }, api_key)
 
-    # 7. Earnings calendar
+    # 6. Earnings calendar
     data["earnings"] = _get("/calendar/earnings", {
         "symbol": ticker,
         "from": today.isoformat(),
@@ -194,7 +256,7 @@ def fetch_all(ticker: str, api_key: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Data extraction helpers
+# Finnhub data extraction helpers
 # ---------------------------------------------------------------------------
 
 def _safe_float(obj, key, default=None):
@@ -377,14 +439,16 @@ def _val(v, fmt=".2f") -> str:
 
 def format_human(ticker: str, section: str,
                  price: dict, profile: dict, metrics: dict,
-                 tech: dict, rec: dict, news: list, earnings: dict) -> str:
+                 tech: dict, rec: dict, news: list, earnings: dict,
+                 data_source: str = "finnhub") -> str:
     lines = []
 
     name = profile.get("name") or ticker
     industry = profile.get("industry") or "Unknown"
-    header = f"{ticker} — {name} | {industry}"
+    source_tag = "  [via Yahoo Finance]" if data_source == "yahoo_finance" else ""
+    header = f"{ticker} — {name} | {industry}{source_tag}"
     lines.append(header)
-    lines.append("=" * min(len(header), 50))
+    lines.append("=" * min(len(header), 60))
     lines.append("")
 
     show_all = section == "all"
@@ -537,7 +601,8 @@ def format_human(ticker: str, section: str,
 
 def build_json_output(ticker: str,
                       price: dict, profile: dict, metrics: dict,
-                      tech: dict, rec: dict, news: list, earnings: dict) -> dict:
+                      tech: dict, rec: dict, news: list, earnings: dict,
+                      data_source: str = "finnhub") -> dict:
     cap_m = profile.get("market_cap")
     consensus = _analyst_consensus(rec)
 
@@ -554,6 +619,7 @@ def build_json_output(ticker: str,
 
     return {
         "ticker":              ticker,
+        "data_source":         data_source,
         "name":                profile.get("name"),
         "industry":            profile.get("industry"),
         "price": {
@@ -613,7 +679,8 @@ def build_json_output(ticker: str,
 def main():
     parser = argparse.ArgumentParser(
         description="Finnhub Signals — real-time price, technicals, fundamentals, "
-                    "analyst data, news, and sentiment for a stock ticker."
+                    "analyst data, news, and sentiment for a stock ticker. "
+                    "Falls back to Yahoo Finance for tickers not in Finnhub's free-tier database."
     )
     parser.add_argument(
         "ticker_pos", nargs="?", metavar="TICKER",
@@ -657,14 +724,37 @@ def main():
     news     = extract_news(raw)
     earnings = extract_earnings(raw)
 
-    closes = fetch_yf_closes(ticker)
-    tech   = compute_technicals(closes, price.get("current"))
+    # Fetch Yahoo Finance chart data (used for technicals always; also used as
+    # price/profile/metrics fallback when Finnhub has no data for this ticker).
+    yf = fetch_yf_data(ticker)
+    closes = yf["closes"]
+    yf_meta = yf["meta"]
+
+    # Yahoo Finance fallback: when Finnhub returns no usable price (OTC/delisted/
+    # small-cap stocks not in Finnhub free tier), use YF chart meta for price,
+    # name, and 52W range. Analyst/fundamentals/earnings remain from Finnhub
+    # (shown as unavailable if Finnhub also lacks them).
+    data_source = "finnhub"
+    if _is_finnhub_data_missing(price) and yf_meta.get("regularMarketPrice"):
+        price   = extract_yf_price(yf_meta)
+        # Prefer Finnhub profile name if available; fall back to YF name
+        if not profile.get("name"):
+            profile = {**profile, **extract_yf_profile(yf_meta)}
+        # Prefer Finnhub 52W range; fall back to YF
+        if metrics.get("week52_high") is None:
+            yf_m = extract_yf_metrics(yf_meta)
+            metrics = {**metrics,
+                       "week52_high": yf_m["week52_high"],
+                       "week52_low":  yf_m["week52_low"]}
+        data_source = "yahoo_finance"
+
+    tech = compute_technicals(closes, price.get("current"))
 
     if args.json:
-        out = build_json_output(ticker, price, profile, metrics, tech, rec, news, earnings)
+        out = build_json_output(ticker, price, profile, metrics, tech, rec, news, earnings, data_source)
         print(json.dumps(out, indent=2))
     else:
-        text = format_human(ticker, args.section, price, profile, metrics, tech, rec, news, earnings)
+        text = format_human(ticker, args.section, price, profile, metrics, tech, rec, news, earnings, data_source)
         print(text)
 
 
