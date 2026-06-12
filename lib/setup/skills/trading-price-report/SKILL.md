@@ -16,7 +16,7 @@ Generates a formatted price report for all active/pending trading plans during U
 - NO markdown tables.
 - NO market-risk commentary.
 - NO "Full Price Feed" or similar sections.
-- The only tickers that appear in your output are those with a GBrain trading-plan page. `finnhub-prices.json` is for internal lookup only — do NOT output its contents.
+- The only tickers that appear in your output are those with a GBrain trading-plan page. Prices fetched via the stocks-signals skill are for internal computation only — do NOT output data for any ticker not in Step 1.
 
 ---
 
@@ -40,13 +40,13 @@ For each page where `status` is `active` OR `pending-confirmation`, read the ful
 
 ---
 
-## Step 2 — Get current prices (internal only)
+## Step 2 — Get current prices
 
-```bash
-cat ~/.openclaw/finnhub-prices.json
-```
+For each ticker from Step 1, get stocks signals to fetch the current price:
 
-This file is for internal price lookup only. Look up the current price for each ticker from Step 1. Do not reference or output any other tickers from this file.
+> Get stocks signals for TICKER
+
+Use the `price.current` field from the result. This is for internal price lookup only — do not reference or output any ticker not found in Step 1.
 
 ---
 
