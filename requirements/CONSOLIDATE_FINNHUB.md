@@ -26,19 +26,19 @@ Replace:
 ```bash
 cat ~/.openclaw/finnhub-prices.json
 ```
-With inline Finnhub `/quote` calls for each ticker found in Step 1:
-```bash
-curl -s "https://finnhub.io/api/v1/quote?symbol=TICKER&token=$FINNHUB_API_KEY"
+With an instruction to invoke the `stocks-signals` skill for each ticker found in Step 1:
 ```
-The skill already knows exactly which tickers it needs from GBrain. Fetching live at report time gives genuinely fresh prices (not up to 5-min stale). With 5–10 active plans this is 5–10 API calls per 15-min run — well within Finnhub's 60 calls/min free limit.
+Get stocks signals for TICKER
+```
+This uses the `stocks-signals` skill's trigger phrase (`"get stocks signal"`) so the agent invokes the skill naturally rather than calling CLI tools directly. Use `--section price` / `--json` output to extract just the current price. Data is live at report time rather than up to 5-min stale.
 
 ### 4. Update `watchlist-builder` SKILL.md — Steps 3 and 3d
 
 Replace reads of `~/.openclaw/finnhub-prices.json` with:
-```bash
-python3 /data/.openclaw/workspace/skills/stocks-signals/finnhub_signals.py TICKER --json --section price
 ```
-Watchlist-builder already calls stocks-signals for new tickers in Step 4b — this just extends the same mechanism to existing-ticker conviction audits and entry reachability checks.
+Get stocks signals for TICKER
+```
+Same trigger-based approach — the agent already does this for new tickers in Step 4b, so this is just extending the same pattern to existing-ticker conviction audits and entry reachability checks. No direct script invocation or file reads.
 
 ### 5. Remove `watchlist-builder` SKILL.md — Step 6
 
@@ -56,8 +56,8 @@ Step 6 writes `finnhub-watchlist.json` explicitly "for `finnhub-ws.js`". With th
 | `lib/server/finnhub-poller.js` | Delete |
 | `lib/server/startup.js` | Remove `finnhubPoller.start()` and parameter |
 | `lib/server/init/server-lifecycle.js` | Remove poller wiring |
-| `lib/setup/skills/trading-price-report/SKILL.md` | Step 2: inline `/quote` calls instead of file read |
-| `lib/setup/skills/watchlist-builder/SKILL.md` | Steps 3, 3d: use stocks-signals script; remove Step 6 |
+| `lib/setup/skills/trading-price-report/SKILL.md` | Step 2: invoke stocks-signals skill instead of file read |
+| `lib/setup/skills/watchlist-builder/SKILL.md` | Steps 3, 3d: invoke stocks-signals skill; remove Step 6 |
 
 ## Trade-offs
 
