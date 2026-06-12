@@ -180,13 +180,25 @@ lib/setup/skills/<skill-name>/
   <support files>   ← optional: scripts, references, etc.
 ```
 
-`SKILL.md` frontmatter minimum:
+`SKILL.md` frontmatter fields and why they matter:
+
 ```yaml
 ---
 name: my-skill-name
 description: One-line description the agent sees when deciding to invoke this skill.
+triggers:
+  - keyword or phrase that invokes this skill
+  - another trigger phrase
 ---
 ```
+
+| Field | Required | Purpose |
+|---|---|---|
+| `name` | Yes | Identifies the skill in `<available-skills>`. Must match the directory name. Used when the agent is told to invoke the skill by name. |
+| `description` | Yes | Shown alongside `name` in the agent's context. The agent reads this to decide whether the skill is relevant to a request. A vague description means the skill gets ignored. |
+| `triggers` | Strongly recommended | A list of phrases or keywords that cause the agent to automatically invoke the skill without being told explicitly. **If omitted, the skill can only be called by name — the agent will not discover it based on the content of a cron message or conversation.** Match trigger phrases to the exact language used in cron job messages and user prompts that should invoke this skill. |
+
+**Trigger matching is how cron jobs reliably invoke skills** — the cron message doesn't need to say "use skill X"; it just needs to contain a phrase listed in `triggers`. See the "Writing Cron / Agent Messages" section below for the complementary rule: cron message wording must match the skill's `triggers`.
 
 **Key gotchas learned the hard way:**
 - **Do NOT write symlinks into `~/.openclaw/plugin-skills/`** — the gateway fully owns that directory and resets it on startup. Any manually created symlinks will be wiped.
