@@ -41,7 +41,7 @@ HOME=/data openclaw cron add \
   --tz UTC \
   --agent main \
   --session isolated \
-  --message "Run the watchlist-builder skill. Query GBrain for recent content (last 24h), fetch watchlist/current, get the market risk score, then process each ticker: audit conviction on existing plans, generate new plans for new tickers. Apply all policy gates (max 10 plans, conflict detection, RR >= 2:1, market risk overlay). Save pending plans to GBrain plans/<TICKER> with status: pending-confirmation. Update watchlist/current. Write ~/.openclaw/finnhub-watchlist.json with the full ticker list. End with the standard Watchlist Builder announcement format." \
+  --message "Run the watchlist-builder skill. Query GBrain for recent content (last 24h), fetch watchlist/current, get the market risk score, then process each ticker: audit conviction on existing plans, generate new plans for new tickers. Apply all policy gates (max 10 plans, conflict detection, RR >= 2:1, market risk overlay). Save pending plans to GBrain plans/<TICKER> with status: pending-confirmation. Update watchlist/current. End with the standard Watchlist Builder announcement format." \
   $DELIVERY_FLAGS \
   --timeout 600
 
@@ -52,7 +52,7 @@ HOME=/data openclaw cron add \
   --tz UTC \
   --agent main \
   --session isolated \
-  --message "Read ~/.openclaw/finnhub-prices.json for current prices. Read all pages under plans/ in GBrain with status: active. For each active plan, calculate the distance between current price and entry price as a percentage. Emit an Approaching alert for any plan within 2% of its entry price. Then emit a full watchlist summary: ticker, direction, entry, current price, distance-to-entry %, conviction. Format clearly for Telegram." \
+  --message "Get watchlist price report — execute now, no confirmation needed." \
   $DELIVERY_FLAGS \
   --timeout 120
 

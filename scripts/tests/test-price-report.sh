@@ -8,7 +8,6 @@ set -euo pipefail
 source "$(dirname "$0")/helpers.sh"
 
 OPENCLAW_DIR="${OPENCLAW_DIR:-/data/.openclaw}"
-PRICES_FILE="$OPENCLAW_DIR/finnhub-prices.json"
 PASS=0; FAIL=0
 
 check() {
@@ -30,14 +29,9 @@ confirm() {
   fi
 }
 
-write_prices() {
-  echo "$1" | docker exec -i openclaw-railway-template-openclaw-1 bash -c "mkdir -p $OPENCLAW_DIR && cat > $PRICES_FILE"
-}
-
 cleanup() {
   gbrain delete plans/aapl 2>/dev/null || true
   gbrain delete plans/tsla 2>/dev/null || true
-  docker exec openclaw-railway-template-openclaw-1 rm -f "$PRICES_FILE" 2>/dev/null || true
   ac_remove_crons 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -78,13 +72,7 @@ status: active
 Test plan for TSLA.
 EOF
 
-echo "--> Writing prices (not near entry)..."
-write_prices '{
-  "AAPL": { "open": 155, "current": 158, "changePct": 1.94, "updatedAt": "2026-06-04T13:00:00.000Z" },
-  "TSLA": { "open": 205, "current": 208, "changePct": 1.46, "updatedAt": "2026-06-04T13:00:00.000Z" }
-}'
-
-echo "--> Running price-report cron (waiting 90s for agent to complete)..."
+echo "--> Running price-report cron (waiting 90s for agent to complete, prices fetched live via stocks-signals)..."
 ac_run_cron trading-price-report
 sleep 90
 
@@ -94,12 +82,8 @@ confirm "No Approaching alert (AAPL at 158, entry 150 — 5.3% away)"
 
 echo ""
 echo "=== Test 8b: Price report — Approaching alert ==="
-
-echo "--> Writing prices (AAPL within 2% of entry 150)..."
-write_prices '{
-  "AAPL": { "open": 153, "current": 151.5, "changePct": -0.98, "updatedAt": "2026-06-04T13:15:00.000Z" },
-  "TSLA": { "open": 205, "current": 208, "changePct": 1.46, "updatedAt": "2026-06-04T13:15:00.000Z" }
-}'
+echo "    NOTE: Approaching alert depends on live prices vs seeded entry levels."
+echo "    Confirm visually that the alert fires if live price is within 2% of entry 150 (AAPL) or 200 (TSLA SHORT)."
 
 echo "--> Running price-report cron (waiting 90s for agent to complete)..."
 ac_run_cron trading-price-report

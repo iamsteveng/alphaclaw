@@ -63,7 +63,7 @@ Re-evaluate whether the stored conviction still matches the current evidence.
 Check all three:
 1. **New GBrain content**: does it support or contradict the existing thesis?
 2. **Market risk score**: has classification shifted since the plan was created?
-3. **Price structure**: read `~/.openclaw/finnhub-prices.json` for current price. Is price still in the valid zone (above invalidation for LONG, below for SHORT)?
+3. **Price structure**: get stocks signals for TICKER to fetch the current price. Is price still in the valid zone (above invalidation for LONG, below for SHORT)?
 
 If any of the three no longer matches the stored conviction:
 - Propose a conviction update: new level + one-line reason
@@ -73,7 +73,7 @@ If all three still support the stored conviction: note "conviction holds" in the
 
 ### 3d — Entry reachability check (run after the three checks above)
 
-Using the current price from `~/.openclaw/finnhub-prices.json` and the plan's stored `entry` and `invalidation`:
+Using the current price from the stocks signals result (fetched in the check above) and the plan's stored `entry` and `invalidation`:
 
 ```
 stop_distance = abs(entry - invalidation)
@@ -195,19 +195,7 @@ updated_at: <ISO-8601>
 
 ---
 
-## Step 6 — Write finnhub-watchlist.json
-
-Extract all tickers (active + pending) and write to `~/.openclaw/finnhub-watchlist.json`:
-
-```json
-["AAPL", "TSLA", "NVDA"]
-```
-
-This file is read by `finnhub-ws.js` to refresh WebSocket subscriptions.
-
----
-
-## Step 7 — Announce results
+## Step 6 — Announce results
 
 End your reply with a summary in this exact format (delivered via Telegram):
 

@@ -9,7 +9,6 @@ set -euo pipefail
 source "$(dirname "$0")/helpers.sh"
 
 OPENCLAW_DIR="${OPENCLAW_DIR:-/data/.openclaw}"
-PRICES_FILE="$OPENCLAW_DIR/finnhub-prices.json"
 PASS=0; FAIL=0
 
 check() {
@@ -36,7 +35,6 @@ cleanup() {
   gbrain delete twitter/post/test-audit 2>/dev/null || true
   gbrain delete watchlist/current 2>/dev/null || true
   gbrain delete watchlist/last-run 2>/dev/null || true
-  docker exec openclaw-railway-template-openclaw-1 rm -f "$PRICES_FILE" 2>/dev/null || true
   ac_remove_crons 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -94,11 +92,7 @@ updated_at: 2026-06-01T11:30:00Z
 - AAPL (conviction: 4, direction: LONG)
 EOF
 
-echo "--> Writing prices (AAPL below invalidation level 144)..."
-echo '{"AAPL": { "open": 143, "current": 141, "changePct": -1.40, "updatedAt": "2026-06-04T11:30:00.000Z" }}' | \
-  docker exec -i openclaw-railway-template-openclaw-1 bash -c "mkdir -p $OPENCLAW_DIR && cat > $PRICES_FILE"
-
-echo "--> Running watchlist-builder cron (waiting 180s for agent to complete)..."
+echo "--> Running watchlist-builder cron (waiting 180s; agent fetches live price via stocks-signals)..."
 ac_run_cron trading-watchlist-builder
 sleep 180
 

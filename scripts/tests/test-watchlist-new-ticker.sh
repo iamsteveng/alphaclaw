@@ -7,8 +7,6 @@ set -euo pipefail
 source "$(dirname "$0")/helpers.sh"
 
 OPENCLAW_DIR="${OPENCLAW_DIR:-/data/.openclaw}"
-PRICES_FILE="$OPENCLAW_DIR/finnhub-prices.json"
-WATCHLIST_FILE="$OPENCLAW_DIR/finnhub-watchlist.json"
 PASS=0; FAIL=0
 
 check() {
@@ -35,7 +33,6 @@ cleanup() {
   gbrain delete plans/nvda 2>/dev/null || true
   gbrain delete watchlist/current 2>/dev/null || true
   gbrain delete watchlist/last-run 2>/dev/null || true
-  docker exec openclaw-railway-template-openclaw-1 rm -f "$PRICES_FILE" "$WATCHLIST_FILE" 2>/dev/null || true
   ac_remove_crons 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -69,11 +66,7 @@ updated_at: 2026-06-04T11:00:00Z
 (none)
 EOF
 
-echo "--> Writing prices..."
-echo '{"NVDA": { "open": 900, "current": 912, "changePct": 1.33, "updatedAt": "2026-06-04T11:30:00.000Z" }}' | \
-  docker exec -i openclaw-railway-template-openclaw-1 bash -c "mkdir -p $OPENCLAW_DIR && cat > $PRICES_FILE"
-
-echo "--> Running watchlist-builder cron (waiting 180s for agent to complete)..."
+echo "--> Running watchlist-builder cron (waiting 180s; agent fetches live price via stocks-signals)..."
 ac_run_cron trading-watchlist-builder
 sleep 180
 
@@ -89,9 +82,6 @@ check "plans/nvda has rr_ratio >= 2"                  "echo '$PLAN' | grep -oP '
 
 WATCHLIST=$(gbrain get watchlist/current 2>/dev/null || echo "")
 check "watchlist/current updated with NVDA"           "echo '$WATCHLIST' | grep -q 'NVDA'"
-
-WATCHLIST_JSON=$(docker exec openclaw-railway-template-openclaw-1 cat "$WATCHLIST_FILE" 2>/dev/null || echo "")
-check "finnhub-watchlist.json contains NVDA"          "echo '$WATCHLIST_JSON' | grep -q 'NVDA'"
 
 echo ""
 confirm "Telegram shows plan proposal for NVDA with entry/target/invalidation and conviction"

@@ -28,9 +28,6 @@ describe("server/startup", () => {
     const gmailWatchService = {
       start: vi.fn(() => callOrder.push("gmailWatchService.start")),
     };
-    const finnhubPoller = {
-      start: vi.fn(() => callOrder.push("finnhubPoller.start")),
-    };
 
     runOnboardedBootSequence({
       ensureManagedExecDefaults,
@@ -44,7 +41,6 @@ describe("server/startup", () => {
       startGateway,
       watchdog,
       gmailWatchService,
-      finnhubPoller,
     });
 
     expect(ensureGatewayProxyConfig).toHaveBeenCalledWith("https://setup.example.com");
@@ -60,7 +56,6 @@ describe("server/startup", () => {
       "startGateway",
       "watchdog.start",
       "gmailWatchService.start",
-      "finnhubPoller.start",
     ]);
   });
 });
