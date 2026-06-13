@@ -2,12 +2,9 @@
 name: pentimento
 description: Layered content analysis using the Pentimento framework — axioms → principles → structures → phenomena → implications. Delivers actions one per message; drills down on demand to reveal the full reasoning chain behind each action.
 triggers:
-  - pentimento
   - analyze in layers
   - layered analysis
   - drill down
-  - unpack this
-  - what are the principles behind
 ---
 
 # Pentimento Analysis
