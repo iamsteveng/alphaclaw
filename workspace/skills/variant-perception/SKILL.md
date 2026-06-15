@@ -116,38 +116,62 @@ At the top of the response, highlight the single most important variant percepti
 
 ## Output Structure
 
+For each section, answer the exact questions from the prompt. Do not skip any.
+
 ```
 🔬 Variant Perception: $TICKER — Company Name
 
 💡 Key Insight: [One-sentence variant perception thesis]
 
-## Business Summary
-...
+## 1) Business Summary
+- what does the company do?
+- how does it make money?
+- why does it matter?
 
-## Bull Case
-...
+## > Bull Case
+- What could go right?
+- What are investors missing?
+- What hidden growth drivers exist?
+- What future catalysts could emerge?
+- What optionality is not reflected in the stock price?
 
-## Bear Case
-...
+## > Bear Case
+- What could go wrong?
+- What risks are underappreciated?
+- What assumptions must be true for the thesis to fail?
 
-## Variant Perception
-...
+## > Variant Perception
+- What does Wall Street currently believe?
+- What alternative outcome could occur?
+- Why is consensus potentially wrong?
 
-## Catalysts
-...
+## > Catalysts
+- Earnings
+- Product launches
+- Partnerships
+- Regulatory developments
+- Industry shifts
+- Capital allocation decisions
 
-## Management
-...
+## > Management
+- Insider ownership
+- Insider buying/selling
+- Capital allocation quality
+- Track record
 
-## Competitive Position
-...
+## > Competitive Position
+- Moat
+- Market share
+- Industry positioning
+- Competitive advantages
 
-## Probability-Weighted Outcomes
-| Case | Probability | Scenario |
-...
+## > Probability-Weighted Outcomes
+- Bear Case (% probability)
+- Base Case (% probability)
+- Bull Case (% probability)
 
 ## Path to Multi-Bagger
-What needs to happen for 2x, 3x, or market leader status.
+If Wall Street is wrong and the bull case plays out, what would need to happen for this stock to double, triple, or become a long-term market leader?
 ```
 
 ## Quality Rules
