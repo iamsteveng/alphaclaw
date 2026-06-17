@@ -21,7 +21,9 @@ echo
 
 # Pipe through head to force kernel pipe buffering — avoids WASM hang where
 # gbrain outputs all results then never exits (known pglite bug).
-PAGE_COUNT=$(timeout 30 env HOME="$GBRAIN_HOME" gbrain list 2>/dev/null | head -n 100000 | wc -l | tr -d ' ')
+# || PAGE_COUNT=0 guards against gbrain exiting 1 (e.g. "no brain configured") which
+# would otherwise abort the script via set -euo pipefail.
+PAGE_COUNT=$(timeout 30 env HOME="$GBRAIN_HOME" gbrain list 2>/dev/null | head -n 100000 | wc -l | tr -d ' ') || PAGE_COUNT=0
 echo "Pages to export: $PAGE_COUNT"
 
 if [[ "$PAGE_COUNT" -eq 0 ]]; then
