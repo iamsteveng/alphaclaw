@@ -241,6 +241,39 @@ if (fs.existsSync(envFilePath)) {
   console.log("[alphaclaw] Loaded .env");
 }
 
+// ---------------------------------------------------------------------------
+// 5b. Promote platform-injected env vars (Railway, Docker) to the .env file
+//     so cron jobs — which run without the platform environment — can source
+//     them. Only writes when the file value is missing or empty; never
+//     overwrites a value the user already set via the Setup UI.
+// ---------------------------------------------------------------------------
+
+const kVarsToPromote = ["GITHUB_TOKEN", "GITHUB_WORKSPACE_REPO"];
+try {
+  let envContent = fs.readFileSync(envFilePath, "utf8");
+  let promotionUpdated = false;
+  for (const key of kVarsToPromote) {
+    const procVal = String(process.env[key] || "").trim();
+    if (!procVal) continue;
+    const lineRe = new RegExp(`^(${key}=)(.*)$`, "m");
+    const match = envContent.match(lineRe);
+    if (match && String(match[2]).trim()) continue; // file already has a value
+    if (match) {
+      envContent = envContent.replace(lineRe, `$1${procVal}`);
+    } else {
+      const sep = envContent.endsWith("\n") || !envContent.length ? "" : "\n";
+      envContent += `${sep}${key}=${procVal}\n`;
+    }
+    promotionUpdated = true;
+  }
+  if (promotionUpdated) {
+    fs.writeFileSync(envFilePath, envContent);
+    console.log("[alphaclaw] Promoted platform env vars to .env");
+  }
+} catch (e) {
+  console.log(`[alphaclaw] Env var promotion skipped: ${e.message}`);
+}
+
 const runGitSync = () => {
   const githubToken = String(process.env.GITHUB_TOKEN || "").trim();
   const githubRepo = resolveGithubRepoPath(
@@ -635,6 +668,7 @@ if (fs.existsSync(hourlyGitSyncPath)) {
       const cronContent = [
         "SHELL=/bin/bash",
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        `ALPHACLAW_ROOT_DIR=${rootDir}`,
         `${cronSchedule} root bash "${hourlyGitSyncPath}" >> /var/log/openclaw-hourly-sync.log 2>&1`,
         "",
       ].join("\n");

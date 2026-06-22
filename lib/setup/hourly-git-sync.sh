@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$REPO"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+OPENCLAW_DIR="$(dirname "$SCRIPT_DIR")"
+ROOT_DIR="$(dirname "$OPENCLAW_DIR")"
+cd "$OPENCLAW_DIR"
 
 # Load persisted env vars when running under cron's minimal environment.
-if [[ -f "$REPO/.env" ]]; then
+# Source alphaclaw's root env file ($ROOT_DIR/.env), not the openclaw gateway
+# env file ($OPENCLAW_DIR/.env) — the root env file holds GITHUB_TOKEN.
+if [[ -f "$ROOT_DIR/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
-  source "$REPO/.env"
+  source "$ROOT_DIR/.env"
   set +a
 fi
 
@@ -89,8 +93,8 @@ resolve_alphaclaw_cmd() {
 
   local candidate_paths=(
     "/app/node_modules/.bin/alphaclaw"
-    "$REPO/node_modules/.bin/alphaclaw"
-    "$REPO/../node_modules/.bin/alphaclaw"
+    "$OPENCLAW_DIR/node_modules/.bin/alphaclaw"
+    "$ROOT_DIR/node_modules/.bin/alphaclaw"
   )
   local candidate
   for candidate in "${candidate_paths[@]}"; do
@@ -109,4 +113,4 @@ if [[ -z "${alphaclaw_cmd:-}" ]]; then
   echo "hourly-git-sync: alphaclaw CLI not found in PATH or known install paths" >&2
   exit 127
 fi
-"$alphaclaw_cmd" git-sync -m "$msg"
+"$alphaclaw_cmd" --root-dir "$ROOT_DIR" git-sync -m "$msg"
