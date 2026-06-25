@@ -58,13 +58,26 @@ try { cfg = JSON.parse(fs.readFileSync(file, 'utf8')); } catch(e) { process.exit
 const paths = cfg && cfg.plugins && cfg.plugins.load && cfg.plugins.load.paths;
 if (!Array.isArray(paths)) process.exit(0);
 const stale = paths.filter(function(p){ return p.indexOf('node_modules/@chrysb/alphaclaw') !== -1; });
-if (!stale.length) { console.log('[entrypoint] plugin paths clean, no stale paths found. current paths:', paths.join(', ') || '(empty)'); process.exit(0); }
-cfg.plugins.load.paths = paths.filter(function(p){ return p.indexOf('node_modules/@chrysb/alphaclaw') === -1; });
+var changed = false;
+if (stale.length) {
+  cfg.plugins.load.paths = paths.filter(function(p){ return p.indexOf('node_modules/@chrysb/alphaclaw') === -1; });
+  console.log('[entrypoint] Removed stale plugin path(s):', stale.join(', '));
+  changed = true;
+} else {
+  console.log('[entrypoint] plugin paths clean. current paths:', paths.join(', ') || '(empty)');
+}
+// Also wipe the stale plugins.entries.usage-tracker so ensureUsageTrackerPluginEntry rebuilds it cleanly.
+// The old entry may have a path field pointing to the old npm location which causes openclaw to reject the config.
+if (cfg.plugins && cfg.plugins.entries && cfg.plugins.entries['usage-tracker']) {
+  console.log('[entrypoint] Removing stale plugins.entries.usage-tracker:', JSON.stringify(cfg.plugins.entries['usage-tracker']));
+  delete cfg.plugins.entries['usage-tracker'];
+  changed = true;
+}
+if (!changed) process.exit(0);
 const tmp = file + '.tmp';
 fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
 fs.renameSync(tmp, file);
-console.log('[entrypoint] Removed stale plugin path(s):', stale.join(', '));
-console.log('[entrypoint] Remaining plugin paths:', cfg.plugins.load.paths.join(', ') || '(empty)');
+console.log('[entrypoint] Config cleaned.');
 " 2>&1 || true
 fi
 
