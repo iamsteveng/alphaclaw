@@ -1,0 +1,35 @@
+name: alpha-claw
+
+services:
+  openclaw:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - SETUP_PASSWORD=${SETUP_PASSWORD}
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/gbrain
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - openclaw-data:/data
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gbrain
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gbrain"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  openclaw-data:
+  postgres-data:

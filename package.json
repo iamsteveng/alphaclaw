@@ -28,7 +28,15 @@
     "test:watch": "vitest",
     "test:watchdog": "vitest run tests/server/watchdog.test.js tests/server/watchdog-db.test.js tests/server/routes-watchdog.test.js",
     "test:coverage": "vitest run --coverage",
-    "prepack": "npm run build:ui"
+    "prepack": "npm run build:ui",
+    "dev": "docker compose up --build",
+    "dev:stop": "docker compose down",
+    "dev:clean": "docker compose down -v",
+    "dev:logs": "docker compose logs -f",
+    "dev:restart": "docker compose restart",
+    "dev:shell": "docker compose exec openclaw bash",
+    "dev:seed": "bash scripts/seed.sh",
+    "dev:fresh": "npm run dev:seed && docker compose up --build"
   },
   "dependencies": {
     "@xdevplatform/xurl": "^1.0.0",

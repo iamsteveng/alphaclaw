@@ -1,0 +1,20 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+numReplicas = 1
+sleepApplication = false
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+
+# Persistent volume — auto-provisioned and mounted at /data on first deploy.
+# All config, credentials, and state are stored here and survive redeployments.
+[volumes]
+alphaclaw-data = "/data"
+
+# Variables shown in the Railway deploy UI — fill SETUP_PASSWORD before deploying.
+[variables]
+SETUP_PASSWORD = ""

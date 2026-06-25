@@ -7,15 +7,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm test                    # run all tests (vitest)
 npm test -- tests/server/routes-auth.test.js  # run a single test file
-npm run build:ui            # rebuild frontend bundle (esbuild + tailwind)
+npm run build:ui            # rebuild frontend bundle (esbuild + tailwind) — local dev only
 npm start                   # start the alphaclaw server
+npm run dev                 # start local Docker Compose environment
+npm run dev:restart         # pick up server-side changes without rebuild (~2s)
 ```
 
-**After UI changes:** the compiled bundle in `lib/public/dist/` is committed to git (pre-built for Railway/GitHub deploys). After editing frontend source, rebuild and force-add before committing:
+**After UI changes (local dev):** the bundle is built into the Docker image, so a rebuild is needed:
 ```bash
-npm run build:ui
-git add -f lib/public/dist/app.bundle.js lib/public/css/tailwind.generated.css
+npm run build:ui && docker compose up --build -d   # rebuild image with new bundle
 ```
+
+**Server-side changes** (lib/server/, lib/setup/): volume-mounted, so `npm run dev:restart` picks them up in ~2s without a rebuild.
+
+**Railway deploys:** the UI bundle is built inside the Docker image automatically — no manual bundle commits needed.
 
 **Before running tests in a fresh checkout:** run `npm install` first — `vitest` is a devDependency.
 
@@ -63,34 +68,34 @@ The frontend uses Preact with `htm` (tagged template literals, no build-time JSX
 
 ## Local Container Testing
 
-The production-close local dev environment lives in a sibling project at `../openclaw-railway-template/`. It runs the same Docker image and entrypoint as Railway, with the local `alpha-claw/src/` volume-mounted over the installed npm package for fast iteration.
+The production-close local dev environment runs directly from this repo using Docker Compose. It builds the same Docker image as Railway, with local source volume-mounted for fast iteration (no rebuild for server-side changes).
 
 **First-time setup (one-time):**
 ```bash
-cd ../openclaw-railway-template
 # Pull API keys + config from the live Railway deployment into data-seed/.env
-# then seed the Docker volume and start:
+railway run cat /data/.env > data-seed/.env  # requires railway CLI + auth
+
+# Seed the Docker volume and start:
 npm run dev:seed   # copies data-seed/.env into the Docker volume
-npm run dev        # builds image and starts container on port 3001
-# Visit http://localhost:3001 and complete the setup wizard
+npm run dev        # builds image and starts containers on port 3000
+# Visit http://localhost:3000 and complete the setup wizard
 ```
 
 **Daily dev loop:**
 ```bash
-cd ../openclaw-railway-template
 npm run dev          # start (skips rebuild if image exists, use --build to force)
-npm run dev:restart  # pick up server-side changes in alpha-claw/src (~2s, no rebuild)
+npm run dev:restart  # pick up server-side changes (~2s, no rebuild needed)
 npm run dev:logs     # tail full logs (nothing filtered)
 npm run dev:shell    # bash into the running container
 ```
 
 **Credentials for local instance:**
-- Dashboard: http://localhost:3001, password from `$SETUP_PASSWORD` in `openclaw-railway-template/.env`
+- Dashboard: http://localhost:3000, password from `SETUP_PASSWORD` in your local `.env` file
 - Telegram bot: `@alphaclaw_dev_bot` (paired to user 7374876027)
 - Model: `deepseek/deepseek-v4-pro`
 - Workspace repo: `iamsteveng/openclaw-dev`
 
-**Port 3000 conflict:** `PORT=3001` is set in `openclaw-railway-template/.env` because port 3000 is occupied by another local service.
+**Port conflict:** set `PORT=3001` in your local `.env` if port 3000 is in use.
 
 **Known dev-only quirk:** `usage-tracker` plugin is blocked (uid=1000 vs root) — harmless, only affects that plugin.
 
@@ -107,7 +112,7 @@ KEY=$(curl -s -b /tmp/railway-cookies.txt "$RAILWAY_URL/api/env" | \
   python3 -c "import json,sys; [print(v['value']) for v in json.load(sys.stdin)['vars'] if v['key']=='DEEPSEEK_API_KEY']")
 
 # 3. Set it in the local instance
-curl -s -b /tmp/alphaclaw-cookies.txt -X PUT http://localhost:3001/api/env \
+curl -s -b /tmp/alphaclaw-cookies.txt -X PUT http://localhost:3000/api/env \
   -H "Content-Type: application/json" \
   -d "{\"vars\":[{\"key\":\"DEEPSEEK_API_KEY\",\"value\":\"$KEY\"}]}"
 
@@ -116,11 +121,11 @@ MODEL=$(curl -s -b /tmp/railway-cookies.txt "$RAILWAY_URL/api/models/status" | \
   python3 -c "import json,sys; print(json.load(sys.stdin)['modelKey'])")
 
 # 5. Set it locally
-curl -s -b /tmp/alphaclaw-cookies.txt -X POST http://localhost:3001/api/models/set \
+curl -s -b /tmp/alphaclaw-cookies.txt -X POST http://localhost:3000/api/models/set \
   -H "Content-Type: application/json" -d "{\"modelKey\":\"$MODEL\"}"
 
 # 6. Restart container to apply env change + reload gateway with new model
-cd ../openclaw-railway-template && npm run dev:restart
+npm run dev:restart
 ```
 
 **Sending a test message to the main agent via API:**
@@ -144,14 +149,14 @@ curl -s -b /tmp/alphaclaw-cookies.txt -X POST http://localhost:3001/api/pairings
 
 ## Deploying to Railway
 
-Railway deploys directly from this GitHub repo. There is no build step on Railway — it runs `npm start` which calls `node bin/alphaclaw.js start`. The UI bundle (`lib/public/dist/app.bundle.js`) and generated CSS must be **committed to git** before pushing, otherwise Railway serves the old bundle.
+Railway deploys directly from this GitHub repo using the `Dockerfile` at the repo root. The UI bundle is built inside the Docker image — no pre-built bundle needs to be committed to git.
 
 **Deploy flow for code changes:**
 1. Edit source files
-2. `npm run build:ui` — rebuild the bundle
-3. `git add -f lib/public/dist/app.bundle.js lib/public/css/tailwind.generated.css` — force-add (both are gitignored)
-4. Commit and push to `main`
-5. Railway auto-redeploys on push
+2. Commit and push to `main`
+3. Railway auto-redeploys on push (builds the Docker image, including `npm run build:ui`)
+
+**Note:** Railway must be connected to `iamsteveng/alpha-claw` (not the old `openclaw-railway-template` repo). See `railway.toml` at the repo root for build configuration.
 
 **Required env vars on Railway:**
 
