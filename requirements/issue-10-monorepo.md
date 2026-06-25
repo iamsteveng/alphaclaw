@@ -316,9 +316,7 @@ fi
 
 ## Constraints
 
-1. **Do not rename or remove the `@chrysb/alphaclaw` npm package** — the package name, bin entry (`alphaclaw`), and exported file structure must remain unchanged. External users who install `@chrysb/alphaclaw` must not be broken.
-
-2. **Do not commit `data-seed/.env`** — it contains Railway credentials and must remain in `.gitignore`. Local dev seeding uses this file but it is never tracked by git.
+1. **Do not commit `data-seed/.env`** — it contains Railway credentials and must remain in `.gitignore`. Local dev seeding uses this file but it is never tracked by git.
 
 3. **Do not change the Railway persistent volume path `/data`** — all existing Railway deployments store state at `/data` and `ALPHACLAW_ROOT_DIR=/data`. Changing this path would require a data migration on the live deployment.
 
