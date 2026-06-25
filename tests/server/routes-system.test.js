@@ -714,6 +714,237 @@ describe("server/routes/system", () => {
     });
   });
 
+  describe("POST /api/agent/message", () => {
+    it("sends message to main agent and returns stdout", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd.mockResolvedValueOnce({
+        ok: true,
+        stdout: "Here are your gbrain pages:\n- plans/aapl\n- plans/tsla\n- learning/2026-06-25",
+      });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "list all pages in gbrain",
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.stdout).toContain("plans/aapl");
+      expect(deps.clawCmd).toHaveBeenCalledWith(
+        "agent --agent main --message 'list all pages in gbrain'",
+        { quiet: true },
+      );
+    });
+
+    it("returns all seeded gbrain page slugs from agent response", async () => {
+      const deps = createSystemDeps();
+      const seededSlugs = ["plans/aapl", "plans/tsla", "learning/2026-06-25"];
+      deps.clawCmd.mockResolvedValueOnce({
+        ok: true,
+        stdout: `I ran gbrain list and found these pages:\n${seededSlugs.map((s) => `- ${s}`).join("\n")}`,
+      });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "run gbrain list and show me all page slugs",
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      for (const slug of seededSlugs) {
+        expect(res.body.stdout).toContain(slug);
+      }
+    });
+
+    it("returns 400 when message is empty", async () => {
+      const deps = createSystemDeps();
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({ message: "" });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ ok: false, error: "message is required" });
+      expect(deps.clawCmd).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 when message is missing", async () => {
+      const deps = createSystemDeps();
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ ok: false, error: "message is required" });
+      expect(deps.clawCmd).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 when message exceeds 4000 characters", async () => {
+      const deps = createSystemDeps();
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "x".repeat(4001),
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ ok: false, error: "message must be 4000 characters or fewer" });
+      expect(deps.clawCmd).not.toHaveBeenCalled();
+    });
+
+    it("accepts a message exactly 4000 characters long", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd.mockResolvedValueOnce({ ok: true, stdout: "" });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "x".repeat(4000),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+    });
+
+    it("returns 502 when clawCmd fails with stderr", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd.mockResolvedValueOnce({
+        ok: false,
+        stderr: "openclaw: connection refused",
+      });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "list all gbrain pages",
+      });
+
+      expect(res.status).toBe(502);
+      expect(res.body).toEqual({ ok: false, error: "openclaw: connection refused" });
+    });
+
+    it("falls back to generic error message when clawCmd stderr is empty", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd.mockResolvedValueOnce({ ok: false, stderr: "" });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "list all gbrain pages",
+      });
+
+      expect(res.status).toBe(502);
+      expect(res.body).toEqual({ ok: false, error: "Could not send message to agent" });
+    });
+
+    it("shell-escapes messages containing single quotes", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd.mockResolvedValueOnce({ ok: true, stdout: "ok" });
+      const app = createApp(deps);
+
+      await request(app).post("/api/agent/message").send({
+        message: "show me today's plans",
+      });
+
+      expect(deps.clawCmd).toHaveBeenCalledWith(
+        "agent --agent main --message 'show me today'\\''s plans'",
+        { quiet: true },
+      );
+    });
+
+    it("routes to Telegram session via --deliver when sessionKey has replyChannel", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd
+        .mockResolvedValueOnce({
+          ok: true,
+          stdout: JSON.stringify({
+            sessions: [
+              {
+                key: "agent:main:telegram:direct:1050",
+                sessionId: "sess-1",
+                updatedAt: 10,
+              },
+            ],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          stdout: "gbrain pages: plans/aapl, plans/tsla",
+        });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "list gbrain pages",
+        sessionKey: "agent:main:telegram:direct:1050",
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.stdout).toContain("plans/aapl");
+      expect(deps.clawCmd).toHaveBeenNthCalledWith(
+        2,
+        "agent --agent main --message 'list gbrain pages' --deliver --reply-channel 'telegram' --reply-to '1050'",
+        { quiet: true },
+      );
+    });
+
+    it("routes via --session-id when session has no replyChannel", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd
+        .mockResolvedValueOnce({
+          ok: true,
+          stdout: JSON.stringify({
+            sessions: [
+              { key: "agent:main:main", sessionId: "main-session-id", updatedAt: 10 },
+            ],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          stdout: "gbrain pages: plans/aapl, plans/tsla",
+        });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "list gbrain pages",
+        sessionKey: "agent:main:main",
+      });
+
+      expect(res.status).toBe(200);
+      expect(deps.clawCmd).toHaveBeenNthCalledWith(
+        2,
+        "agent --agent main --message 'list gbrain pages' --session-id 'main-session-id'",
+        { quiet: true },
+      );
+    });
+
+    it("returns 400 when sessionKey is not found in active sessions", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd.mockResolvedValueOnce({
+        ok: true,
+        stdout: JSON.stringify({ sessions: [] }),
+      });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "list gbrain pages",
+        sessionKey: "agent:main:nonexistent",
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ ok: false, error: "Selected session was not found" });
+    });
+
+    it("returns 502 when session lookup clawCmd fails", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd.mockResolvedValueOnce({ ok: false, stderr: "sessions command failed" });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "list gbrain pages",
+        sessionKey: "agent:main:main",
+      });
+
+      expect(res.status).toBe(502);
+      expect(res.body.ok).toBe(false);
+    });
+  });
+
   it("returns raw session metadata on GET /api/agent/sessions", async () => {
     const deps = createSystemDeps();
     deps.fs.readFileSync.mockImplementation((targetPath) => {
