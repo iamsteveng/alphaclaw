@@ -6,6 +6,9 @@ node_modules/
 coverage/
 workspace/.openclaw/
 
+# Claude Code session data (auto-memory, project config)
+.claude/
+
 # Local dev seed data — contains Railway credentials, never commit
 data-seed/.env
 
