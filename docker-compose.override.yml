@@ -1,0 +1,11 @@
+services:
+  openclaw:
+    volumes:
+      # Shadow in-image source with local checkout for fast iteration.
+      # Server/setup changes: docker compose restart (no rebuild needed, ~2-3s).
+      # UI changes (lib/public/js): npm run build:ui first, then docker compose up --build.
+      # Note: lib/public/dist is intentionally NOT mounted — the image's built bundle is used.
+      - ./bin:/app/bin
+      - ./lib/server:/app/lib/server
+      - ./lib/setup:/app/lib/setup
+      - ./scripts:/app/scripts
