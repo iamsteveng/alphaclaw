@@ -43,8 +43,11 @@ echo "[gbrain] Ready."
 # Diagnostic: confirm plugin directory and config state before alphaclaw starts
 echo "[entrypoint] /app/lib/plugin: $(ls /app/lib/plugin/ 2>&1)"
 echo "[entrypoint] /app/lib/plugin/usage-tracker: $(ls /app/lib/plugin/usage-tracker/ 2>&1)"
-echo "[entrypoint] openclaw.json plugins.load.paths: $(node -e "try{var c=JSON.parse(require('fs').readFileSync('/data/.openclaw/openclaw.json','utf8'));console.log(JSON.stringify(c.plugins&&c.plugins.load&&c.plugins.load.paths))}catch(e){console.log('ERR:'+e.message)}" 2>&1)"
-echo "[entrypoint] openclaw plugins list: $(HOME=/data OPENCLAW_HOME=/data OPENCLAW_CONFIG_PATH=/data/.openclaw/openclaw.json openclaw plugins list 2>&1 | head -5)"
+echo "[entrypoint] openclaw.json plugins section: $(node -e "try{var c=JSON.parse(require('fs').readFileSync('/data/.openclaw/openclaw.json','utf8'));console.log(JSON.stringify(c.plugins))}catch(e){console.log('ERR:'+e.message)}" 2>&1)"
+echo "[entrypoint] raw plugins.load.paths bytes: $(grep -o '"paths":\[[^]]*\]' /data/.openclaw/openclaw.json 2>/dev/null || echo 'grep failed')"
+echo "[entrypoint] openclaw plugins list (no json): $(HOME=/data OPENCLAW_HOME=/data OPENCLAW_CONFIG_PATH=/data/.openclaw/openclaw.json openclaw plugins list 2>&1 | head -5)"
+JSON_OUT=$(HOME=/data OPENCLAW_HOME=/data OPENCLAW_CONFIG_PATH=/data/.openclaw/openclaw.json openclaw plugins list --json 2>&1); JSON_EXIT=$?
+echo "[entrypoint] openclaw plugins list --json exit=$JSON_EXIT output=$(echo "$JSON_OUT" | head -5)"
 
 # Remove stale @chrysb/alphaclaw npm package plugin path (monorepo migration — one-time cleanup)
 # The old template repo pre-installed usage-tracker from node_modules/@chrysb/alphaclaw.
