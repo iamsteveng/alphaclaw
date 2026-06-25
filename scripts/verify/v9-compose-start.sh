@@ -7,6 +7,7 @@ if [[ -z "${SETUP_PASSWORD:-}" ]]; then
 fi
 
 export SETUP_PASSWORD
+export PORT=13001  # avoid conflict with services that may occupy 3000 on the test host
 
 docker compose up -d --build
 
