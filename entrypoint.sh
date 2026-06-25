@@ -40,6 +40,39 @@ gbrain apply-migrations --yes --non-interactive 2>&1 || echo "[gbrain] apply-mig
 
 echo "[gbrain] Ready."
 
+# One-time migration: remove stale plugin paths/entries left by the old openclaw-railway-template
+# deployment where usage-tracker was installed from node_modules/@chrysb/alphaclaw (an npm package).
+# After the PR 11 monorepo consolidation, alphaclaw IS the app — the plugin lives at
+# /app/lib/plugin/usage-tracker, not in node_modules. openclaw refuses to start if the old path
+# is still in plugins.load.paths, and also rejects plugins.entries for custom (non-bundled) plugins.
+if [ -f "/data/.openclaw/openclaw.json" ]; then
+  node -e "
+const fs = require('fs');
+const file = '/data/.openclaw/openclaw.json';
+let cfg;
+try { cfg = JSON.parse(fs.readFileSync(file, 'utf8')); } catch(e) { process.exit(0); }
+const paths = cfg && cfg.plugins && cfg.plugins.load && cfg.plugins.load.paths;
+var changed = false;
+if (Array.isArray(paths)) {
+  const stale = paths.filter(function(p){ return p.indexOf('node_modules/@chrysb/alphaclaw') !== -1; });
+  if (stale.length) {
+    cfg.plugins.load.paths = paths.filter(function(p){ return p.indexOf('node_modules/@chrysb/alphaclaw') === -1; });
+    console.log('[entrypoint] Removed stale plugin path(s):', stale.join(', '));
+    changed = true;
+  }
+}
+if (cfg.plugins && cfg.plugins.entries && cfg.plugins.entries['usage-tracker']) {
+  delete cfg.plugins.entries['usage-tracker'];
+  changed = true;
+}
+if (!changed) process.exit(0);
+const tmp = file + '.tmp';
+fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+fs.renameSync(tmp, file);
+console.log('[entrypoint] Config migrated (removed stale usage-tracker plugin path/entry).');
+" 2>&1 || true
+fi
+
 # Configure OpenClaw browser tool (idempotent — safe to run on every start)
 # Set OPENCLAW_BROWSER_DISABLE=1 to skip browser setup (e.g., emergency incident response)
 if [ "${OPENCLAW_BROWSER_DISABLE:-0}" = "1" ]; then

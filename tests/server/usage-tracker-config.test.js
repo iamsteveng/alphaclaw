@@ -12,7 +12,7 @@ const createTempOpenclawDir = () =>
   fs.mkdtempSync(path.join(os.tmpdir(), "alphaclaw-usage-tracker-test-"));
 
 describe("server/usage-tracker-config", () => {
-  it("adds conversation access while preserving supported hook policy", () => {
+  it("adds plugin to allow + load.paths and removes stale plugins.entries entry", () => {
     const cfg = {
       plugins: {
         allow: ["memory-core"],
@@ -33,16 +33,11 @@ describe("server/usage-tracker-config", () => {
     expect(changed).toBe(true);
     expect(cfg.plugins.allow).toEqual(["memory-core", "usage-tracker"]);
     expect(cfg.plugins.load.paths).toContain(kUsageTrackerPluginPath);
-    expect(cfg.plugins.entries["usage-tracker"]).toEqual({
-      enabled: true,
-      hooks: {
-        allowPromptInjection: false,
-        allowConversationAccess: true,
-      },
-    });
+    // Custom plugins must not appear in plugins.entries — openclaw rejects them
+    expect(cfg.plugins.entries["usage-tracker"]).toBeUndefined();
   });
 
-  it("forces conversation access policy when an older alphaclaw config has it missing or false", () => {
+  it("removes plugins.entries.usage-tracker even when path and allow are already correct", () => {
     const cfg = {
       plugins: {
         allow: ["usage-tracker"],
@@ -62,10 +57,7 @@ describe("server/usage-tracker-config", () => {
     const changed = ensureUsageTrackerPluginEntry(cfg);
 
     expect(changed).toBe(true);
-    expect(cfg.plugins.entries["usage-tracker"].hooks).toEqual({
-      allowPromptInjection: false,
-      allowConversationAccess: true,
-    });
+    expect(cfg.plugins.entries["usage-tracker"]).toBeUndefined();
   });
 
   it("repairs existing openclaw configs on boot for older alphaclaw installs", () => {
@@ -93,8 +85,6 @@ describe("server/usage-tracker-config", () => {
 
     expect(changed).toBe(true);
     const next = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    expect(next.plugins.entries["usage-tracker"].hooks).toEqual({
-      allowConversationAccess: true,
-    });
+    expect(next.plugins.entries["usage-tracker"]).toBeUndefined();
   });
 });

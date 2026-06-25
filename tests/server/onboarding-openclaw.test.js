@@ -34,16 +34,19 @@ describe("server/onboarding/openclaw", () => {
   });
 
   it("only scrubs exact secret string values in JSON", () => {
+    const { kUsageTrackerPluginPath } = require("../../lib/server/usage-tracker-config");
     const openclawDir = createTempOpenclawDir();
     const configPath = path.join(openclawDir, "openclaw.json");
-    const pluginPath = "/app/node_modules/@chrysb/alphaclaw/lib/plugin/usage-tracker";
+    // Start with the legacy npm path — writeSanitizedOpenclawConfig should migrate it to the
+    // current app path and NOT substitute secret placeholder values into path strings.
+    const stalePluginPath = "/app/node_modules/@chrysb/alphaclaw/lib/plugin/usage-tracker";
     fs.writeFileSync(
       configPath,
       JSON.stringify(
         {
           plugins: {
             allow: ["memory-core"],
-            load: { paths: [pluginPath] },
+            load: { paths: [stalePluginPath] },
             entries: {},
           },
           channels: {},
@@ -64,7 +67,10 @@ describe("server/onboarding/openclaw", () => {
     const next = JSON.parse(fs.readFileSync(configPath, "utf8"));
     expect(next.notes).toBe("${GOG_KEYRING_PASSWORD}");
     expect(next.plugins.allow).toEqual(["memory-core", "usage-tracker"]);
-    expect(next.plugins.load.paths).toContain(pluginPath);
+    // Stale npm path replaced by current app path
+    expect(next.plugins.load.paths).toContain(kUsageTrackerPluginPath);
+    expect(next.plugins.load.paths).not.toContain(stalePluginPath);
+    // Secret placeholder must not bleed into path strings
     expect(next.plugins.load.paths).not.toContain(
       "/app/node_modules/@chrysb/${GOG_KEYRING_PASSWORD}/lib/plugin/usage-tracker",
     );
@@ -94,10 +100,8 @@ describe("server/onboarding/openclaw", () => {
 
     const next = JSON.parse(fs.readFileSync(configPath, "utf8"));
     expect(next.plugins.allow).toEqual(["usage-tracker"]);
-    expect(next.plugins.entries["usage-tracker"]).toEqual({
-      enabled: true,
-      hooks: { allowConversationAccess: true },
-    });
+    // Custom plugins must not appear in plugins.entries — openclaw rejects them
+    expect(next.plugins.entries["usage-tracker"]).toBeUndefined();
   });
 
   it("resets imported allowlist dmPolicy to pairing when re-enabling discord", () => {
