@@ -40,17 +40,11 @@ gbrain apply-migrations --yes --non-interactive 2>&1 || echo "[gbrain] apply-mig
 
 echo "[gbrain] Ready."
 
-# Diagnostic: confirm plugin directory and config state before alphaclaw starts
-echo "[entrypoint] /app/lib/plugin: $(ls /app/lib/plugin/ 2>&1)"
-echo "[entrypoint] /app/lib/plugin/usage-tracker: $(ls /app/lib/plugin/usage-tracker/ 2>&1)"
-echo "[entrypoint] /data/.openclaw/openclaw.json paths: $(node -e "try{var c=JSON.parse(require('fs').readFileSync('/data/.openclaw/openclaw.json','utf8'));console.log(JSON.stringify(c.plugins&&c.plugins.load&&c.plugins.load.paths))}catch(e){console.log('ERR:'+e.message)}" 2>&1)"
-echo "[entrypoint] /data/openclaw.json paths: $(node -e "try{var c=JSON.parse(require('fs').readFileSync('/data/openclaw.json','utf8'));console.log(JSON.stringify(c.plugins&&c.plugins.load&&c.plugins.load.paths))}catch(e){console.log('ERR:'+e.message)}" 2>&1)"
-JSON_EXIT=0; JSON_OUT=$(HOME=/data OPENCLAW_HOME=/data OPENCLAW_CONFIG_PATH=/data/.openclaw/openclaw.json openclaw plugins list --json 2>&1) || JSON_EXIT=$?
-echo "[entrypoint] openclaw plugins list --json exit=$JSON_EXIT output=$(echo "$JSON_OUT" | grep -E 'error|invalid|not found|paths' | head -5)"
-
-# Remove stale @chrysb/alphaclaw npm package plugin path (monorepo migration — one-time cleanup)
-# The old template repo pre-installed usage-tracker from node_modules/@chrysb/alphaclaw.
-# That path no longer exists; openclaw refuses to start if it's still in plugins.load.paths.
+# One-time migration: remove stale plugin paths/entries left by the old openclaw-railway-template
+# deployment where usage-tracker was installed from node_modules/@chrysb/alphaclaw (an npm package).
+# After the PR 11 monorepo consolidation, alphaclaw IS the app — the plugin lives at
+# /app/lib/plugin/usage-tracker, not in node_modules. openclaw refuses to start if the old path
+# is still in plugins.load.paths, and also rejects plugins.entries for custom (non-bundled) plugins.
 if [ -f "/data/.openclaw/openclaw.json" ]; then
   node -e "
 const fs = require('fs');
@@ -58,20 +52,16 @@ const file = '/data/.openclaw/openclaw.json';
 let cfg;
 try { cfg = JSON.parse(fs.readFileSync(file, 'utf8')); } catch(e) { process.exit(0); }
 const paths = cfg && cfg.plugins && cfg.plugins.load && cfg.plugins.load.paths;
-if (!Array.isArray(paths)) process.exit(0);
-const stale = paths.filter(function(p){ return p.indexOf('node_modules/@chrysb/alphaclaw') !== -1; });
 var changed = false;
-if (stale.length) {
-  cfg.plugins.load.paths = paths.filter(function(p){ return p.indexOf('node_modules/@chrysb/alphaclaw') === -1; });
-  console.log('[entrypoint] Removed stale plugin path(s):', stale.join(', '));
-  changed = true;
-} else {
-  console.log('[entrypoint] plugin paths clean. current paths:', paths.join(', ') || '(empty)');
+if (Array.isArray(paths)) {
+  const stale = paths.filter(function(p){ return p.indexOf('node_modules/@chrysb/alphaclaw') !== -1; });
+  if (stale.length) {
+    cfg.plugins.load.paths = paths.filter(function(p){ return p.indexOf('node_modules/@chrysb/alphaclaw') === -1; });
+    console.log('[entrypoint] Removed stale plugin path(s):', stale.join(', '));
+    changed = true;
+  }
 }
-// Also wipe the stale plugins.entries.usage-tracker so ensureUsageTrackerPluginEntry rebuilds it cleanly.
-// The old entry may have a path field pointing to the old npm location which causes openclaw to reject the config.
 if (cfg.plugins && cfg.plugins.entries && cfg.plugins.entries['usage-tracker']) {
-  console.log('[entrypoint] Removing stale plugins.entries.usage-tracker:', JSON.stringify(cfg.plugins.entries['usage-tracker']));
   delete cfg.plugins.entries['usage-tracker'];
   changed = true;
 }
@@ -79,7 +69,7 @@ if (!changed) process.exit(0);
 const tmp = file + '.tmp';
 fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
 fs.renameSync(tmp, file);
-console.log('[entrypoint] Config cleaned.');
+console.log('[entrypoint] Config migrated (removed stale usage-tracker plugin path/entry).');
 " 2>&1 || true
 fi
 
