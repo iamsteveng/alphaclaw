@@ -40,6 +40,12 @@ gbrain apply-migrations --yes --non-interactive 2>&1 || echo "[gbrain] apply-mig
 
 echo "[gbrain] Ready."
 
+# Diagnostic: confirm plugin directory and config state before alphaclaw starts
+echo "[entrypoint] /app/lib/plugin: $(ls /app/lib/plugin/ 2>&1)"
+echo "[entrypoint] /app/lib/plugin/usage-tracker: $(ls /app/lib/plugin/usage-tracker/ 2>&1)"
+echo "[entrypoint] openclaw.json plugins.load.paths: $(node -e "try{var c=JSON.parse(require('fs').readFileSync('/data/.openclaw/openclaw.json','utf8'));console.log(JSON.stringify(c.plugins&&c.plugins.load&&c.plugins.load.paths))}catch(e){console.log('ERR:'+e.message)}" 2>&1)"
+echo "[entrypoint] openclaw plugins list: $(HOME=/data OPENCLAW_HOME=/data OPENCLAW_CONFIG_PATH=/data/.openclaw/openclaw.json openclaw plugins list 2>&1 | head -5)"
+
 # Remove stale @chrysb/alphaclaw npm package plugin path (monorepo migration — one-time cleanup)
 # The old template repo pre-installed usage-tracker from node_modules/@chrysb/alphaclaw.
 # That path no longer exists; openclaw refuses to start if it's still in plugins.load.paths.
