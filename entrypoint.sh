@@ -137,6 +137,11 @@ if [ -n "$GITHUB_TOKEN" ]; then
   fi
 fi
 
+# Install deepseek provider — moved from stock to external plugin in openclaw 2026.6.10.
+# Idempotent: no-op if already installed. Must run before alphaclaw starts the gateway.
+echo "[openclaw] Installing @openclaw/deepseek-provider (required since 2026.6.10)..."
+HOME=/data openclaw plugins install @openclaw/deepseek-provider 2>&1 || echo "[openclaw] deepseek plugin install warning (may already be installed)"
+
 # Start system cron daemon so /etc/cron.d/openclaw-hourly-sync runs on schedule
 /usr/sbin/cron
 
