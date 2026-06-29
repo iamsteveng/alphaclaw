@@ -233,7 +233,7 @@ describe("server/auth-profiles", () => {
     expect(config.gateway.port).toBe(18789);
   });
 
-  it("setModelConfig normalizes openai-codex/ keys to openai/ without injecting agentRuntime", () => {
+  it("setModelConfig normalizes primary key but preserves configuredModels keys as-is", () => {
     ap.setModelConfig({
       primary: "openai-codex/gpt-5.4",
       configuredModels: {
@@ -246,8 +246,8 @@ describe("server/auth-profiles", () => {
     const config = readJson("openclaw.json");
     expect(config.agents.defaults.model.primary).toBe("openai/gpt-5.4");
     expect(config.agents.defaults.models).toEqual({
-      "openai/gpt-5.4": {},
-      "openai/gpt-5.3-codex": { someOpt: true },
+      "openai-codex/gpt-5.4": {},
+      "openai-codex/gpt-5.3-codex": { someOpt: true },
       "anthropic/claude-opus-4-6": {},
     });
   });
