@@ -82,6 +82,18 @@ describe("server/helpers", () => {
         provider: "minimax",
         label: "MiniMax M2.5",
       },
+      // openai-codex entries are always injected from the bootstrap catalog
+      // (OpenClaw normalises live models to openai/ so they would otherwise disappear)
+      { key: "openai-codex/gpt-5.1", provider: "openai-codex", label: "GPT-5.1" },
+      { key: "openai-codex/gpt-5.1-codex-max", provider: "openai-codex", label: "GPT-5.1 Codex Max" },
+      { key: "openai-codex/gpt-5.1-codex-mini", provider: "openai-codex", label: "GPT-5.1 Codex Mini" },
+      { key: "openai-codex/gpt-5.2", provider: "openai-codex", label: "GPT-5.2" },
+      { key: "openai-codex/gpt-5.2-codex", provider: "openai-codex", label: "GPT-5.2 Codex" },
+      { key: "openai-codex/gpt-5.3-codex", provider: "openai-codex", label: "GPT-5.3 Codex" },
+      { key: "openai-codex/gpt-5.3-codex-spark", provider: "openai-codex", label: "GPT-5.3 Codex Spark" },
+      { key: "openai-codex/gpt-5.4", provider: "openai-codex", label: "GPT-5.4" },
+      { key: "openai-codex/gpt-5.4-mini", provider: "openai-codex", label: "GPT-5.4 Mini" },
+      { key: "openai-codex/gpt-5.5", provider: "openai-codex", label: "GPT-5.5" },
       {
         key: "openai/gpt-5.1-codex",
         provider: "openai",
