@@ -233,6 +233,25 @@ describe("server/auth-profiles", () => {
     expect(config.gateway.port).toBe(18789);
   });
 
+  it("setModelConfig normalizes openai-codex/ keys to openai/ with agentRuntime", () => {
+    ap.setModelConfig({
+      primary: "openai-codex/gpt-5.4",
+      configuredModels: {
+        "openai-codex/gpt-5.4": {},
+        "openai-codex/gpt-5.3-codex": { someOpt: true },
+        "anthropic/claude-opus-4-6": {},
+      },
+    });
+
+    const config = readJson("openclaw.json");
+    expect(config.agents.defaults.model.primary).toBe("openai/gpt-5.4");
+    expect(config.agents.defaults.models).toEqual({
+      "openai/gpt-5.4": { agentRuntime: { id: "codex" } },
+      "openai/gpt-5.3-codex": { someOpt: true, agentRuntime: { id: "codex" } },
+      "anthropic/claude-opus-4-6": {},
+    });
+  });
+
   it("legacy upsertCodexProfile writes oauth and syncs config", () => {
     ap.upsertCodexProfile({
       access: "jwt",

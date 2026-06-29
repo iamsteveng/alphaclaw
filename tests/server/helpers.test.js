@@ -4,6 +4,8 @@ const {
   getCodexAccountId,
   resolveGithubRepoUrl,
   normalizeOnboardingModels,
+  normalizeCodexModelKey,
+  normalizeCodexConfiguredModels,
 } = require("../../lib/server/helpers");
 const { CODEX_JWT_CLAIM_PATH } = require("../../lib/server/constants");
 
@@ -105,5 +107,49 @@ describe("server/helpers", () => {
         label: "GLM 5",
       },
     ]);
+  });
+
+  describe("normalizeCodexModelKey", () => {
+    it("rewrites openai-codex/ prefix to openai/", () => {
+      expect(normalizeCodexModelKey("openai-codex/gpt-5.4")).toBe("openai/gpt-5.4");
+      expect(normalizeCodexModelKey("openai-codex/gpt-5.3-codex")).toBe("openai/gpt-5.3-codex");
+    });
+
+    it("leaves non-codex keys unchanged", () => {
+      expect(normalizeCodexModelKey("openai/gpt-5.1-codex")).toBe("openai/gpt-5.1-codex");
+      expect(normalizeCodexModelKey("anthropic/claude-opus-4-6")).toBe("anthropic/claude-opus-4-6");
+    });
+
+    it("handles non-string input", () => {
+      expect(normalizeCodexModelKey(null)).toBeNull();
+      expect(normalizeCodexModelKey(undefined)).toBeUndefined();
+    });
+  });
+
+  describe("normalizeCodexConfiguredModels", () => {
+    it("renames openai-codex/ keys to openai/ and injects agentRuntime.id", () => {
+      const result = normalizeCodexConfiguredModels({
+        "openai-codex/gpt-5.4": {},
+        "openai-codex/gpt-5.3-codex": { someOption: true },
+        "anthropic/claude-opus-4-6": { other: 1 },
+      });
+      expect(result).toEqual({
+        "openai/gpt-5.4": { agentRuntime: { id: "codex" } },
+        "openai/gpt-5.3-codex": { someOption: true, agentRuntime: { id: "codex" } },
+        "anthropic/claude-opus-4-6": { other: 1 },
+      });
+    });
+
+    it("does not overwrite existing agentRuntime.id", () => {
+      const result = normalizeCodexConfiguredModels({
+        "openai-codex/gpt-5.4": { agentRuntime: { id: "custom" } },
+      });
+      expect(result["openai/gpt-5.4"].agentRuntime.id).toBe("custom");
+    });
+
+    it("returns the input unchanged when null or non-object", () => {
+      expect(normalizeCodexConfiguredModels(null)).toBeNull();
+      expect(normalizeCodexConfiguredModels(undefined)).toBeUndefined();
+    });
   });
 });
