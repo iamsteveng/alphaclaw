@@ -259,6 +259,26 @@ describe("server/routes/models", () => {
     );
   });
 
+  it("normalizes openai-codex/ key to openai/ on POST /api/models/set", async () => {
+    const deps = createModelDeps();
+    deps.shellCmd.mockResolvedValue("");
+    const app = createApp(deps);
+
+    const res = await request(app)
+      .post("/api/models/set")
+      .send({ modelKey: "openai-codex/gpt-5.4" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(deps.shellCmd).toHaveBeenCalledWith(
+      'openclaw models set "openai/gpt-5.4"',
+      {
+        env: { OPENCLAW_GATEWAY_TOKEN: "token" },
+        timeout: 30000,
+      },
+    );
+  });
+
   it("re-syncs auth references on PUT /api/models/config", async () => {
     const deps = createModelDeps();
     deps.shellCmd.mockResolvedValue("");
