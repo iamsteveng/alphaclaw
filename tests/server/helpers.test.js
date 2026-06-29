@@ -127,24 +127,24 @@ describe("server/helpers", () => {
   });
 
   describe("normalizeCodexConfiguredModels", () => {
-    it("renames openai-codex/ keys to openai/ and injects agentRuntime.id", () => {
+    it("renames openai-codex/ keys to openai/ without injecting agentRuntime", () => {
       const result = normalizeCodexConfiguredModels({
         "openai-codex/gpt-5.4": {},
         "openai-codex/gpt-5.3-codex": { someOption: true },
         "anthropic/claude-opus-4-6": { other: 1 },
       });
       expect(result).toEqual({
-        "openai/gpt-5.4": { agentRuntime: { id: "codex" } },
-        "openai/gpt-5.3-codex": { someOption: true, agentRuntime: { id: "codex" } },
+        "openai/gpt-5.4": {},
+        "openai/gpt-5.3-codex": { someOption: true },
         "anthropic/claude-opus-4-6": { other: 1 },
       });
     });
 
-    it("does not overwrite existing agentRuntime.id", () => {
+    it("preserves existing agentRuntime.id when present", () => {
       const result = normalizeCodexConfiguredModels({
-        "openai-codex/gpt-5.4": { agentRuntime: { id: "custom" } },
+        "openai-codex/gpt-5.4": { agentRuntime: { id: "codex" } },
       });
-      expect(result["openai/gpt-5.4"].agentRuntime.id).toBe("custom");
+      expect(result["openai/gpt-5.4"].agentRuntime.id).toBe("codex");
     });
 
     it("returns the input unchanged when null or non-object", () => {
