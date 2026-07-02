@@ -135,34 +135,15 @@ The following must not change as a result of this work:
 
 ## When You Need Human Feedback
 
-**1. Does "auto apply" for `broken-action-required` mean auto-close in GBrain, or just auto-label?**
+_(none — all open questions resolved via PR comment 2026-07-02)_
 
-_Observation:_ The issue says "auto apply the changes, do not need human confirmation any more." For `broken-action-required` when the user is already in a position, the description says "decide whether the stop means full exit or a major trim." The system has no trade execution capability — it can only update GBrain and send a Telegram notification. It's unclear whether the agent should:
-  - (a) Set `status: closed` automatically and archive the plan, OR
-  - (b) Set `label: broken-action-required` + write the exit/trim recommendation, but leave `status: active` until Steve manually closes it.
+### Resolved decisions
 
-_Suggested resolution:_ Option (b) — agent writes the recommendation and flips the label, but `status` stays `active` until Steve acts. This avoids auto-closing a plan Steve may disagree with.
+**1. `broken-action-required` — auto-label only (option b)**
+Agent sets `label: broken-action-required` and writes a specific exit/trim recommendation into the plan body, then sends a Telegram notification. `status` stays `active` until Steve manually closes it. The agent never auto-sets `status: closed`.
 
-_Tag:_ @iamsteveng
+**2. X post conviction pathway — existing chain is sufficient**
+The existing `type: tweet` / `type: article` → GBrain ingestion → watchlist-builder cron chain covers the X post use case. No new direct-message skill trigger is needed.
 
----
-
-**2. How does the X post conviction pathway work when there is no new GBrain tweet/article?**
-
-_Observation:_ The issue says "conviction from a X post comment" as a use case. The watchlist builder already reads `type: tweet` pages from GBrain (Step 1a). But there is no described mechanism for Steve to send a specific X post URL/text to the agent mid-session (outside of a cron). It's unclear whether:
-  - (a) The existing GBrain tweet-ingestion pipeline covers this case (Steve ingests tweets into GBrain, cron picks them up), OR
-  - (b) A new pathway is needed (e.g., Steve messages the agent directly with a URL or pasted tweet text, and the agent builds the plan immediately without a cron).
-
-_Suggested resolution:_ Clarify whether the existing `type: tweet` → cron → watchlist-builder chain is sufficient, or whether a new direct-message skill trigger (e.g., "build trading plan for TICKER — conviction from: <pasted text>") is required.
-
-_Tag:_ @iamsteveng
-
----
-
-**3. Confirmation granularity for the EOD loop plan updates**
-
-_Observation:_ The EOD loop currently embeds a full watchlist audit (Step 1 in `kEodLoopMessage`) then writes a learning log (Step 2). If the audit updates plan levels and labels autonomously, and the watchlist builder ALSO runs autonomously at 08:00 ET, there could be two autonomous agents updating the same plan pages the same day. There is no locking mechanism in GBrain.
-
-_Suggested resolution:_ Decide whether the EOD loop should (a) only update `label` (not `entry`/`target`/`invalidation` levels), leaving full plan rebuilds to the watchlist builder, or (b) do a full rebuild and accept last-writer-wins. If (b), the EOD loop should write `updated_at` and a log entry so Steve can audit the history.
-
-_Tag:_ @iamsteveng
+**3. EOD loop scope — label updates only**
+The EOD loop updates `label` only. It does not modify `entry`, `target`, or `invalidation` levels. Full plan rebuilds (level changes) remain the exclusive responsibility of the watchlist builder.
