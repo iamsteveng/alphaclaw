@@ -81,4 +81,4 @@ When a plan is labelled `broken-action-required`:
    Do not re-enter until a fresh plan with new levels is created.
    ```
 3. Send Telegram notification: `⛔ TICKER: broken-action-required — [one-line reason]. Check plans/ticker for action.`
-4. Do not auto-close the plan or remove it from `watchlist/current`.
+4. Do not auto-close the plan or remove it from `watchlist/current` (a GBrain page — update via `gbrain put watchlist/current`, never a flat file).

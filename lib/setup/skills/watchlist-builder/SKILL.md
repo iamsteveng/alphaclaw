@@ -184,9 +184,17 @@ label: <usable-now | accumulate | extended-wait>
 
 ## Step 5 — Update watchlist/current
 
-Write a summary of all active tickers to `watchlist/current`:
+`watchlist/current` is a **GBrain page**, not a flat file on disk. Always write it using `gbrain put`. Never use shell redirection (`>`) or any filesystem write to create or update this page.
 
-```yaml
+**Self-correction:** If `watchlist/current` was accidentally created as a flat file (i.e., `gbrain get watchlist/current` fails or returns no content but a file exists on disk at a path like `watchlist/current`), you must fix it:
+1. Delete the flat file: `rm -f <path-to-flat-file>`
+2. Recreate it as a GBrain page using `gbrain put` (see below)
+
+Write the summary using:
+
+```bash
+gbrain restore watchlist/current 2>/dev/null
+gbrain put watchlist/current << 'EOF'
 ---
 type: watchlist
 updated_at: <ISO-8601>
@@ -196,6 +204,7 @@ updated_at: <ISO-8601>
 
 - <TICKER> (label: <label>, direction: <LONG|SHORT>, conviction: <N>)
 - ...
+EOF
 ```
 
 ---
