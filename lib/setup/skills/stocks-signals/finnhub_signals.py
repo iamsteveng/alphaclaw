@@ -698,13 +698,11 @@ def main():
         "--section", choices=SECTIONS, default="all",
         help="Output section filter: price|tech|analyst|news|all (default: all)"
     )
+    parser.add_argument(
+        "--market-status", action="store_true",
+        help="Output US market open/closed status as JSON and exit (no ticker needed)"
+    )
     args = parser.parse_args()
-
-    ticker = args.ticker or args.ticker_pos
-    if not ticker:
-        parser.print_help(sys.stderr)
-        sys.exit(1)
-    ticker = ticker.upper().strip()
 
     api_key = os.environ.get("FINNHUB_API_KEY", "").strip()
     if not api_key:
@@ -714,6 +712,24 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
+
+    if args.market_status:
+        status = _get("/stock/market-status", {"exchange": "US"}, api_key)
+        if status is None:
+            print(json.dumps({"isOpen": False, "error": "Could not fetch market status"}))
+        else:
+            print(json.dumps({
+                "isOpen": bool(status.get("isOpen", False)),
+                "holiday": status.get("holiday"),
+                "session": status.get("session"),
+            }))
+        sys.exit(0)
+
+    ticker = args.ticker or args.ticker_pos
+    if not ticker:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+    ticker = ticker.upper().strip()
 
     raw = fetch_all(ticker, api_key)
 

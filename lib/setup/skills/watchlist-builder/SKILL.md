@@ -1,6 +1,6 @@
 ---
 name: watchlist-builder
-description: Build and maintain a trading watchlist from GBrain content. Generates trading plans for new tickers, audits conviction on existing ones, enforces policy gates (max plans, conflict detection, RR ≥ 2:1, market risk overlay). Invoke when asked to build the watchlist, generate a trading plan, or audit existing plans. Also triggered by the trading-watchlist-builder cron at 19:30 HKT.
+description: Build and maintain a trading watchlist from GBrain content. Generates trading plans for new tickers, audits conviction on existing ones, enforces policy gates (max plans, conflict detection, RR ≥ 2:1, market risk overlay). All plans are written autonomously as status:active with a label. No confirmation step. Invoke when asked to build the watchlist, generate a trading plan, or audit existing plans. Also triggered by the trading-watchlist-builder cron at 08:00 ET.
 triggers:
   - "build watchlist"
   - "audit watchlist"
@@ -8,7 +8,7 @@ triggers:
 
 # Watchlist Builder + Trading Plan Generator
 
-Runs ~19:30 HKT daily (between HK market close and US market open). Reads GBrain for fresh content, processes each ticker, and announces plan proposals to Steve via Telegram. Steve confirms before any plan becomes active.
+Runs ~08:00 ET daily (before US market open). Reads GBrain for fresh content, processes each ticker, and writes plans autonomously. Decision-mode labels and the broken-plan procedure are defined in the `trading-framework` skill — do not copy them here.
 
 ---
 
@@ -65,11 +65,18 @@ Check all three:
 2. **Market risk score**: has classification shifted since the plan was created?
 3. **Price structure**: get stocks signals for TICKER to fetch the current price. Is price still in the valid zone (above invalidation for LONG, below for SHORT)?
 
-If any of the three no longer matches the stored conviction:
-- Propose a conviction update: new level + one-line reason
-- Do NOT write to GBrain yet — include in the Telegram announcement for Steve to confirm
+Apply the "existing plan" label rules from the `trading-framework` skill to determine the new label.
 
-If all three still support the stored conviction: note "conviction holds" in the announcement.
+**Write the updated label directly to GBrain** (no pending — changes take effect immediately):
+
+```bash
+gbrain restore plans/<lowercase-ticker> 2>/dev/null
+# Then write frontmatter with updated label + unchanged body
+```
+
+If the new label is `broken-action-required`, follow the full broken-plan procedure from the `trading-framework` skill: append `### Broken-Plan Action` to the plan body with a specific exit/trim recommendation, send Telegram notification for that ticker immediately, and keep `status: active`.
+
+If all three checks still support the stored conviction: note "conviction holds, label unchanged" in the Step 6 announcement.
 
 ### 3d — Entry reachability check (run after the three checks above)
 
@@ -85,8 +92,8 @@ price_drift   = abs(current_price - entry)
 - SHORT: `current_price < entry` AND `price_drift > stop_distance` (price dropped more than one stop-distance below entry — structural zone missed)
 
 **If stale:** the entry zone is no longer valid. Skip the conviction result and trigger a full plan rebuild:
-- Run Steps 4b → 4e for this ticker (fetch fresh signals, generate new plan, save as `pending-confirmation`)
-- In the Telegram announcement, flag it as a rebuild: `♻️ <TICKER>: entry zone stale (price drifted X% past entry) — new plan generated`
+- Run Steps 4b → 4e for this ticker (fetch fresh signals, generate new plan, save autonomously as `status: active` with label assessed from current price)
+- In the Step 6 announcement, flag it as a rebuild: `♻️ <TICKER>: entry zone stale (price drifted X% past entry) — new plan written`
 
 **If entry is still reachable:** proceed normally with the conviction audit result.
 
@@ -98,9 +105,9 @@ price_drift   = abs(current_price - entry)
 
 Read `plans/<TICKER>` (any status). If a plan exists with `status: active` in the **opposite direction** to what the new evidence suggests:
 
-> "You have an active [LONG/SHORT] on [TICKER] — new evidence suggests [SHORT/LONG]. Should I close the existing plan first, or skip this one?"
+> "You have an active [LONG/SHORT] on [TICKER] — new evidence suggests [SHORT/LONG]. Skipping — resolve the conflict manually first."
 
-Do NOT generate the new plan. Include this conflict message in the Telegram announcement.
+Do NOT generate the new plan. Note the conflict in the Step 6 announcement.
 
 ### 4b — Fetch signals (MANDATORY — run before any level determination)
 
@@ -136,7 +143,9 @@ RR = abs(target - entry) / abs(entry - invalidation)
 - If RR < 2.0 (LONG) or < 1.5 (SHORT): reject. Note the rejection reason.
 - If RR ≥ minimum: proceed.
 
-### 4e — Save to GBrain as pending
+### 4e — Assign initial label and save to GBrain
+
+**Assign initial label** using current price vs entry/invalidation (see "New plan" label rules in the `trading-framework` skill).
 
 First run `gbrain restore plans/<lowercase-ticker> 2>/dev/null` to restore any soft-deleted version. Then write to `plans/<TICKER>`:
 
@@ -150,7 +159,8 @@ target: <price>
 invalidation: <price>
 rr_ratio: <float, 2 decimal places>
 setup_rating: <1-5>
-status: pending-confirmation
+status: active
+label: <usable-now | accumulate | extended-wait>
 ---
 
 ## Trading Plan — TICKER DIRECTION
@@ -174,9 +184,17 @@ status: pending-confirmation
 
 ## Step 5 — Update watchlist/current
 
-Write a summary of all active + pending tickers to `watchlist/current`:
+`watchlist/current` is a **GBrain page**, not a flat file on disk. Always write it using `gbrain put`. Never use shell redirection (`>`) or any filesystem write to create or update this page.
 
-```yaml
+**Self-correction:** If `watchlist/current` was accidentally created as a flat file (i.e., `gbrain get watchlist/current` fails or returns no content but a file exists on disk at a path like `watchlist/current`), you must fix it:
+1. Delete the flat file: `rm -f <path-to-flat-file>`
+2. Recreate it as a GBrain page using `gbrain put` (see below)
+
+Write the summary using:
+
+```bash
+gbrain restore watchlist/current 2>/dev/null
+gbrain put watchlist/current << 'EOF'
 ---
 type: watchlist
 updated_at: <ISO-8601>
@@ -184,13 +202,9 @@ updated_at: <ISO-8601>
 
 ## Active Tickers
 
-- <TICKER> (conviction: <N>, direction: <LONG|SHORT>)
+- <TICKER> (label: <label>, direction: <LONG|SHORT>, conviction: <N>)
 - ...
-
-## Pending Confirmation
-
-- <TICKER> (conviction: <N>, direction: <LONG|SHORT>)
-- ...
+EOF
 ```
 
 ---
@@ -200,32 +214,33 @@ updated_at: <ISO-8601>
 End your reply with a summary in this exact format (delivered via Telegram):
 
 ```
-Watchlist Builder — <date> 19:30 HKT
+Watchlist Builder — <date> 08:00 ET
 Market risk: <Risk On | Neutral | Caution | Risk Off>
 
-📋 New plans (pending your confirmation):
-✅ <TICKER> [LONG/SHORT] entry <X> target <X> invalidation <X> RR <X> conviction <N>/5
+✅ New plans written:
+✅ <TICKER> [LONG/SHORT] entry <X> target <X> invalidation <X> RR <X> label <label>
    Evidence: <one-line summary>
 
-🔄 Conviction updates (pending your confirmation):
-⬇️ <TICKER> conviction 4→3: <one-line reason>
+🏷️ Conviction updates written:
+⬇️ <TICKER> label usable-now→accumulate: <one-line reason>
 
-⚠️ Conflicts detected:
-🚨 <TICKER>: existing LONG, new evidence suggests SHORT — awaiting direction from you
+⛔ Broken plans actioned:
+⛔ <TICKER>: broken-action-required — <one-line reason> — exit recommendation written, Telegram sent
+
+⚠️ Conflicts skipped:
+🚨 <TICKER>: active LONG conflicts with new SHORT evidence — resolve manually
 
 🚫 Blocked:
 - <TICKER>: plan cap at 10 — no new plans until an existing one closes
 - <TICKER>: RR 1.4:1 below minimum 2:1 — rejected
 
-♻️ Rebuilt plans (entry zone stale — pending your confirmation):
-✅ <TICKER> [LONG/SHORT] entry <X> target <X> invalidation <X> RR <X> conviction <N>/5
+♻️ Rebuilt (entry zone stale):
+✅ <TICKER> [LONG/SHORT] entry <X> target <X> invalidation <X> RR <X> label <label>
    Rebuilt because: price drifted X% past original entry
 
 ✔️ Conviction holds:
-- <TICKER>: thesis unchanged, conviction 4/5
+- <TICKER>: thesis unchanged, label usable-now
 ```
-
-Steve replies with "confirm <TICKER>" to activate a pending plan, or "skip <TICKER>" to discard it.
 
 ---
 
@@ -241,4 +256,4 @@ Steve replies with "confirm <TICKER>" to activate a pending plan, or "skip <TICK
 | Risk sizing (meme) | HK$5,000 fixed |
 | Caution/Risk Off overlay | conviction −1 (min 1) |
 
-Never auto-apply any change. All proposals require Steve's explicit confirmation.
+All plan writes are autonomous. Conflicts still require manual resolution.

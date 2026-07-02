@@ -11,6 +11,8 @@ triggers:
 
 Generates a formatted price report for all active/pending trading plans during US market hours.
 
+This skill does not apply decision-mode labels — see `trading-framework` for label definitions. It reads plan data (ticker, direction, entry, setup_rating) from GBrain without modifying labels or status.
+
 **STRICT OUTPUT RULES:**
 - Your entire response is ONLY the report below. Nothing else.
 - NO markdown tables.
@@ -23,7 +25,7 @@ Generates a formatted price report for all active/pending trading plans during U
 ## Step 0 — Check market status
 
 ```bash
-curl -s "https://finnhub.io/api/v1/stock/market-status?exchange=US&token=$FINNHUB_API_KEY"
+python3 /data/.openclaw/workspace/skills/stocks-signals/finnhub_signals.py --market-status
 ```
 
 If `isOpen` is `false`, output `Market closed — skipping price report.` and stop.
