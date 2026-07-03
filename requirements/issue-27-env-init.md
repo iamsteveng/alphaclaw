@@ -12,26 +12,32 @@ Model authentication and channel authentication remain UI-only and are
 
 Observable behaviours:
 
-1. **Git steps auto-complete from env vars.** When the user submits the
+1. **Setup UI hides the GitHub section when env vars are detected.** When the
+   onboarding UI loads and `GITHUB_TOKEN` + `GITHUB_WORKSPACE_REPO` are already
+   configured (readable from a status endpoint), the GitHub credential fields
+   are not shown. The user only fills in model + channel credentials.
+
+2. **Git steps auto-complete from env vars.** When the user submits the
    onboarding form (with model + channel credentials), if `GITHUB_TOKEN` and
    `GITHUB_WORKSPACE_REPO` are already present in the `.env` file (promoted
    from platform env by the existing `kVarsToPromote` step in
    `bin/alphaclaw.js`), the backend uses those values to perform all git
-   operations — the user does not need to supply GitHub credentials in the form.
+   operations. GitHub credentials are never submitted in the form body in this
+   path.
 
-2. **Import path when repo is non-empty.** If `GITHUB_WORKSPACE_REPO` points
+3. **Import path when repo is non-empty.** If `GITHUB_WORKSPACE_REPO` points
    to a repo that contains an existing `openclaw.json`, the git setup clones
    and restores from it (same as the "Import existing setup" UI mode).
 
-3. **Fresh-repo path when repo is empty or absent.** If `GITHUB_WORKSPACE_REPO`
+4. **Fresh-repo path when repo is empty or absent.** If `GITHUB_WORKSPACE_REPO`
    points to an empty or non-existent repo, a new git repo is initialised and
    pushed (same as the "New setup" UI mode).
 
-4. **UI falls back to explicit entry when env vars are absent.** If `GITHUB_TOKEN`
+5. **UI falls back to explicit entry when env vars are absent.** If `GITHUB_TOKEN`
    or `GITHUB_WORKSPACE_REPO` are not present in `.env`, the onboarding form
    still collects them — existing behaviour unchanged.
 
-5. **Hourly git sync cron is installed.** Regardless of whether the GitHub
+6. **Hourly git sync cron is installed.** Regardless of whether the GitHub
    values came from env vars or the form, the hourly sync cron is installed
    as part of onboarding.
 
@@ -40,6 +46,21 @@ Observable behaviours:
 > All behaviours below must be verified by scripts, not by AI agent judgement.
 > Never allow a graceful skip when external API credentials are present —
 > if the API rejects the request the test must fail, not pass silently.
+
+### UI hides GitHub section when env vars are detected
+
+- [ ] A status/check endpoint (existing or new) exposes whether `GITHUB_TOKEN`
+  and `GITHUB_WORKSPACE_REPO` are already configured so the UI can conditionally
+  hide the GitHub fields. Verify the endpoint returns a truthy flag when both
+  vars are non-empty in `.env`:
+  ```bash
+  grep -q 'githubConfigured.*true' <(curl -sf http://localhost:3000/api/status)
+  # or equivalent field name returned by the status endpoint
+  ```
+
+- [ ] When both vars are set, the onboarding form submission does **not** include
+  `GITHUB_TOKEN` or `GITHUB_WORKSPACE_REPO` in the `vars` array (confirmed by
+  the backend acceptance test below — the backend must accept this absence).
 
 ### Git steps auto-complete from env vars
 
@@ -135,8 +156,6 @@ Observable behaviours:
   when they are absent from the submitted `vars` array, so the `hasGithub`
   check can be satisfied by pre-promoted env vars.
 - No changes to the model selection or channel setup steps in `completeOnboarding`.
-- The existing behaviour when GitHub vars are supplied in the form must be
-  unchanged — form values take precedence over env file values.
 - No new startup-time auto-onboarding: `onboarded.json` is still only written
   when the user completes the Setup UI (model + channel step). The server must
   not write `onboarded.json` on startup without UI interaction.
@@ -145,12 +164,4 @@ Observable behaviours:
 
 ## When You Need Human Feedback
 
-1. **Precedence when both sources are present.**
-   If `GITHUB_TOKEN` is in `.env` (promoted from platform) and the user also
-   supplies a different value in the form `vars` array, which wins?
-   Form value is the natural answer (same pattern as the rest of onboarding),
-   but needs explicit confirmation to avoid surprise behaviour for users who
-   rotate tokens.
-
-   @iamsteveng: confirm form value takes precedence over `.env` promoted value,
-   or should the env-var value always win?
+(none)
