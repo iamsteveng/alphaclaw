@@ -1611,3 +1611,70 @@ describe("server/routes/onboarding", () => {
     expect(deps.writeEnvFile).not.toHaveBeenCalled();
   });
 });
+
+describe("server/routes/onboarding — env-var github path", () => {
+  beforeEach(() => {
+    global.fetch = vi.fn();
+  });
+
+  it("accepts POST /api/onboard without github vars in body when readEnvFile has them", async () => {
+    const deps = createBaseDeps();
+    deps.readEnvFile.mockReturnValue([
+      { key: "GITHUB_TOKEN", value: "ghp_env_token" },
+      { key: "GITHUB_WORKSPACE_REPO", value: "owner/repo" },
+    ]);
+    // First: verifyGithubRepoForOnboarding(mode='existing') for auto-detect
+    // Second: verifyGithubRepoForOnboarding(mode='new') inside ensureGithubRepoAccessible
+    // Each makes: GET /user, GET /repos/<repo>, GET /user/repos (findOwnedRepoByName)
+    // Finally: POST /user/repos to create
+    const userOk = { ok: true, headers: { get: () => "repo" }, json: async () => ({ login: "owner" }) };
+    const repo404 = { ok: false, status: 404, statusText: "Not Found", json: async () => ({ message: "Not Found" }) };
+    const emptyRepos = { ok: true, headers: { get: () => "" }, json: async () => [] };
+    global.fetch
+      .mockResolvedValueOnce(userOk)    // verify(existing): GET /user
+      .mockResolvedValueOnce(repo404)   // verify(existing): GET /repos → 404
+      .mockResolvedValueOnce(emptyRepos) // verify(existing): findOwnedRepoByName
+      .mockResolvedValueOnce(userOk)    // ensure→verify(new): GET /user
+      .mockResolvedValueOnce(repo404)   // ensure→verify(new): GET /repos → 404
+      .mockResolvedValueOnce(emptyRepos) // ensure→verify(new): findOwnedRepoByName
+      .mockResolvedValueOnce({          // create repo
+        ok: true,
+        status: 201,
+        statusText: "Created",
+        json: async () => ({}),
+      });
+    const app = createApp(deps);
+
+    const res = await request(app).post("/api/onboard").send({
+      modelKey: "openai/gpt-5.1-codex",
+      vars: [
+        { key: "OPENAI_API_KEY", value: "sk-test-123456789" },
+        { key: "TELEGRAM_BOT_TOKEN", value: "telegram_123456789" },
+      ],
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("rejects POST /api/onboard when github vars are absent from both body and env file", async () => {
+    const deps = createBaseDeps();
+    deps.readEnvFile.mockReturnValue([]);
+    const app = createApp(deps);
+
+    const res = await request(app).post("/api/onboard").send({
+      modelKey: "openai/gpt-5.1-codex",
+      vars: [
+        { key: "OPENAI_API_KEY", value: "sk-test-123456789" },
+        { key: "TELEGRAM_BOT_TOKEN", value: "telegram_123456789" },
+      ],
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      ok: false,
+      error: "GitHub token and workspace repo are required",
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
