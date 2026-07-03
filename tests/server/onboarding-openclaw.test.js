@@ -9,6 +9,7 @@ const {
 } = require("../../lib/server/onboarding/openclaw");
 const {
   ensureImportedSystemVarSecrets,
+  restoreDroppedConfigSections,
 } = require("../../lib/server/onboarding/index");
 
 const createTempOpenclawDir = () =>
@@ -209,5 +210,55 @@ describe("server/onboarding/index ensureImportedSystemVarSecrets", () => {
     });
 
     expect(varsToSave.find((v) => v.key === "WEBHOOK_TOKEN")).toBeUndefined();
+  });
+});
+
+describe("server/onboarding/index restoreDroppedConfigSections", () => {
+  it("restores top-level sections dropped by an external CLI rewrite", () => {
+    const openclawDir = createTempOpenclawDir();
+    const preConfig = {
+      agents: { defaults: { model: { primary: "openai-codex/gpt-5.4" } } },
+      auth: { profiles: {} },
+      gateway: { mode: "local", auth: { token: "${OPENCLAW_GATEWAY_TOKEN}" } },
+      channels: { discord: { enabled: true } },
+      plugins: { entries: { discord: { enabled: true } } },
+    };
+    // Simulate openclaw's CLI overwriting the file with only what it manages.
+    fs.writeFileSync(
+      path.join(openclawDir, "openclaw.json"),
+      JSON.stringify({
+        agents: { defaults: { model: { primary: "anthropic/claude-sonnet-5" } } },
+        auth: { profiles: { anthropic: {} } },
+      }),
+      "utf8",
+    );
+
+    restoreDroppedConfigSections({ fs, openclawDir, preConfig });
+
+    const result = JSON.parse(
+      fs.readFileSync(path.join(openclawDir, "openclaw.json"), "utf8"),
+    );
+    expect(result.gateway).toEqual(preConfig.gateway);
+    expect(result.channels).toEqual(preConfig.channels);
+    expect(result.plugins).toEqual(preConfig.plugins);
+    // Whatever the CLI legitimately wrote for agents/auth is preserved, not reverted.
+    expect(result.agents.defaults.model.primary).toBe("anthropic/claude-sonnet-5");
+    expect(result.auth.profiles).toEqual({ anthropic: {} });
+  });
+
+  it("does nothing when no sections were dropped", () => {
+    const openclawDir = createTempOpenclawDir();
+    const preConfig = { agents: {}, auth: {}, gateway: { mode: "local" } };
+    fs.writeFileSync(
+      path.join(openclawDir, "openclaw.json"),
+      JSON.stringify({ agents: {}, auth: {}, gateway: { mode: "local" } }),
+      "utf8",
+    );
+    const before = fs.readFileSync(path.join(openclawDir, "openclaw.json"), "utf8");
+
+    restoreDroppedConfigSections({ fs, openclawDir, preConfig });
+
+    const after = fs.readFileSync(path.join(openclawDir, "openclaw.json"), "utf8");
+    expect(after).toBe(before);
   });
 });
