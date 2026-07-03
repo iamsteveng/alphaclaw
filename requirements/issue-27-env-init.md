@@ -120,6 +120,18 @@ Observable behaviours:
   git -C "$ALPHACLAW_ROOT_DIR/.openclaw" ls-remote --exit-code origin main
   ```
 
+### Fine-grained PAT + non-existent repo
+
+- [ ] When `GITHUB_TOKEN` is a fine-grained PAT (`github_pat_...`) and
+  `GITHUB_WORKSPACE_REPO` does not exist, `POST /api/onboard` returns a 400
+  error whose message references the `repo` scope or classic PAT requirement:
+  ```bash
+  curl -sf -X POST http://localhost:3000/api/onboard \
+    -H "Content-Type: application/json" \
+    -d '{"vars":[{"key":"ANTHROPIC_API_KEY","value":"..."},{"key":"TELEGRAM_BOT_TOKEN","value":"..."}],"modelKey":"anthropic/claude-sonnet-4-6"}' \
+    | grep -qiE 'classic PAT|repo scope'
+  ```
+
 ### Fallback when env vars are absent
 
 - [ ] When `GITHUB_TOKEN` and `GITHUB_WORKSPACE_REPO` are absent from `.env`
@@ -144,6 +156,26 @@ Observable behaviours:
   grep -E '^GITHUB_TOKEN=test_token' "$ALPHACLAW_ROOT_DIR/.env"
   grep -E '^GITHUB_WORKSPACE_REPO=owner/repo' "$ALPHACLAW_ROOT_DIR/.env"
   ```
+
+## Token Requirements
+
+`GITHUB_TOKEN` must have sufficient permissions to read, write, and (if the
+repo does not yet exist) create the target repository.
+
+| Token type | Required permissions |
+|---|---|
+| Classic PAT (`ghp_...`) | `repo` scope — covers create, read, and push for private repos. `public_repo` suffices for public repos only. |
+| Fine-grained PAT (`github_pat_...`) | **Contents** (read + write) and **Metadata** (read) on the target repo. |
+
+**Fine-grained PAT limitation:** the GitHub API returns 403 when a fine-grained
+PAT attempts to create a new repository. If `GITHUB_WORKSPACE_REPO` does not
+exist and `GITHUB_TOKEN` is a fine-grained PAT, the onboarding must fail with a
+descriptive error directing the user to use a classic PAT with `repo` scope
+instead.
+
+**Owner match:** the token's authenticated GitHub user must be the owner of
+`GITHUB_WORKSPACE_REPO`, or the owner must be a GitHub organisation the token
+can access.
 
 ## Constraints
 
