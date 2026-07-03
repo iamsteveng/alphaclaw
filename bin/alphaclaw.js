@@ -250,7 +250,13 @@ if (fs.existsSync(envFilePath)) {
 
 const kVarsToPromote = ["GITHUB_TOKEN", "GITHUB_WORKSPACE_REPO"];
 try {
-  let envContent = fs.readFileSync(envFilePath, "utf8");
+  let envContent;
+  try {
+    envContent = fs.readFileSync(envFilePath, "utf8");
+  } catch (readErr) {
+    if (readErr.code !== "ENOENT") throw readErr;
+    envContent = "";
+  }
   let promotionUpdated = false;
   for (const key of kVarsToPromote) {
     const procVal = String(process.env[key] || "").trim();
