@@ -7,6 +7,9 @@ const {
   writeManagedImportOpenclawConfig,
   writeSanitizedOpenclawConfig,
 } = require("../../lib/server/onboarding/openclaw");
+const {
+  ensureImportedSystemVarSecrets,
+} = require("../../lib/server/onboarding/index");
 
 const createTempOpenclawDir = () =>
   fs.mkdtempSync(path.join(os.tmpdir(), "alphaclaw-onboarding-openclaw-test-"));
@@ -136,5 +139,75 @@ describe("server/onboarding/openclaw", () => {
     expect(next.channels.discord.enabled).toBe(true);
     expect(next.channels.discord.dmPolicy).toBe("pairing");
     expect(next.channels.discord.token).toBe("${DISCORD_BOT_TOKEN}");
+  });
+});
+
+describe("server/onboarding/index ensureImportedSystemVarSecrets", () => {
+  const systemVars = new Set(["OPENCLAW_GATEWAY_TOKEN", "WEBHOOK_TOKEN"]);
+
+  it("generates a fresh secret for a system var referenced by an imported config with no existing value", () => {
+    const openclawDir = createTempOpenclawDir();
+    fs.writeFileSync(
+      path.join(openclawDir, "openclaw.json"),
+      JSON.stringify({
+        gateway: { auth: { token: "${OPENCLAW_GATEWAY_TOKEN}" } },
+        hooks: { token: "${WEBHOOK_TOKEN}" },
+      }),
+      "utf8",
+    );
+
+    const varsToSave = [];
+    ensureImportedSystemVarSecrets({
+      fs,
+      openclawDir,
+      varsToSave,
+      systemVars,
+    });
+
+    const gatewayToken = varsToSave.find((v) => v.key === "OPENCLAW_GATEWAY_TOKEN");
+    const webhookToken = varsToSave.find((v) => v.key === "WEBHOOK_TOKEN");
+    expect(gatewayToken?.value).toBeTruthy();
+    expect(webhookToken?.value).toBeTruthy();
+    expect(gatewayToken.value).not.toBe(webhookToken.value);
+  });
+
+  it("does not overwrite a system var that already has a value", () => {
+    const openclawDir = createTempOpenclawDir();
+    fs.writeFileSync(
+      path.join(openclawDir, "openclaw.json"),
+      JSON.stringify({ gateway: { auth: { token: "${OPENCLAW_GATEWAY_TOKEN}" } } }),
+      "utf8",
+    );
+
+    const varsToSave = [{ key: "OPENCLAW_GATEWAY_TOKEN", value: "existing-token" }];
+    ensureImportedSystemVarSecrets({
+      fs,
+      openclawDir,
+      varsToSave,
+      systemVars,
+    });
+
+    expect(varsToSave.find((v) => v.key === "OPENCLAW_GATEWAY_TOKEN")?.value).toBe(
+      "existing-token",
+    );
+  });
+
+  it("does not add a system var that the imported config never references", () => {
+    const openclawDir = createTempOpenclawDir();
+    fs.writeFileSync(
+      path.join(openclawDir, "openclaw.json"),
+      JSON.stringify({ gateway: { auth: { token: "${OPENCLAW_GATEWAY_TOKEN}" } } }),
+      "utf8",
+    );
+
+    const varsToSave = [];
+    ensureImportedSystemVarSecrets({
+      fs,
+      openclawDir,
+      varsToSave,
+      systemVars,
+    });
+
+    expect(varsToSave.find((v) => v.key === "WEBHOOK_TOKEN")).toBeUndefined();
   });
 });
