@@ -26,6 +26,18 @@ describe("frontend/welcome-config", () => {
     ).toBe('Enter the source repo as "owner/repo".');
   });
 
+  it("skips GitHub validation when githubConfigured is set via env vars", async () => {
+    const welcomeConfig = await loadWelcomeConfig();
+
+    expect(
+      welcomeConfig.getWelcomeGroupError(
+        "github",
+        {},
+        { githubConfigured: true },
+      ),
+    ).toBe("");
+  });
+
   it("returns a Codex-specific auth message for the AI step", async () => {
     const welcomeConfig = await loadWelcomeConfig();
 
