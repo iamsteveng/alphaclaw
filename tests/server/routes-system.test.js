@@ -358,6 +358,44 @@ describe("server/routes/system", () => {
     );
   });
 
+  it("returns githubConfigured:true when both github vars are set in env file", async () => {
+    const deps = createSystemDeps();
+    deps.readEnvFile.mockReturnValue([
+      { key: "GITHUB_TOKEN", value: "ghp_test123" },
+      { key: "GITHUB_WORKSPACE_REPO", value: "owner/repo" },
+    ]);
+    const app = createApp(deps);
+
+    const res = await request(app).get("/api/status");
+
+    expect(res.status).toBe(200);
+    expect(res.body.githubConfigured).toBe(true);
+  });
+
+  it("returns githubConfigured:false when github vars are absent from env file", async () => {
+    const deps = createSystemDeps();
+    deps.readEnvFile.mockReturnValue([]);
+    const app = createApp(deps);
+
+    const res = await request(app).get("/api/status");
+
+    expect(res.status).toBe(200);
+    expect(res.body.githubConfigured).toBe(false);
+  });
+
+  it("returns githubConfigured:false when only one github var is set", async () => {
+    const deps = createSystemDeps();
+    deps.readEnvFile.mockReturnValue([
+      { key: "GITHUB_TOKEN", value: "ghp_test123" },
+    ]);
+    const app = createApp(deps);
+
+    const res = await request(app).get("/api/status");
+
+    expect(res.status).toBe(200);
+    expect(res.body.githubConfigured).toBe(false);
+  });
+
   it("returns tokenized dashboard URL when OpenClaw CLI prints a token", async () => {
     const previousEnvToken = process.env.OPENCLAW_GATEWAY_TOKEN;
     delete process.env.OPENCLAW_GATEWAY_TOKEN;

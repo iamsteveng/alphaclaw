@@ -1,0 +1,199 @@
+# Feature: alphaclaw init and track changes with the same github repo — Requirements
+
+## Goals
+
+When `GITHUB_TOKEN` and `GITHUB_WORKSPACE_REPO` are present as platform
+environment variables (e.g. injected by Railway or Docker), the onboarding
+flow automatically handles all **git-related steps** using those values —
+without requiring the user to enter GitHub credentials in the Setup UI form.
+
+Model authentication and channel authentication remain UI-only and are
+**out of scope** for this feature.
+
+Observable behaviours:
+
+1. **Setup UI hides the GitHub section when env vars are detected.** When the
+   onboarding UI loads and `GITHUB_TOKEN` + `GITHUB_WORKSPACE_REPO` are already
+   configured (readable from a status endpoint), the GitHub credential fields
+   are not shown. The user only fills in model + channel credentials.
+
+2. **Git steps auto-complete from env vars.** When the user submits the
+   onboarding form (with model + channel credentials), if `GITHUB_TOKEN` and
+   `GITHUB_WORKSPACE_REPO` are already present in the `.env` file (promoted
+   from platform env by the existing `kVarsToPromote` step in
+   `bin/alphaclaw.js`), the backend uses those values to perform all git
+   operations. GitHub credentials are never submitted in the form body in this
+   path.
+
+3. **Import path when repo is non-empty.** If `GITHUB_WORKSPACE_REPO` points
+   to a repo that contains an existing `openclaw.json`, the git setup clones
+   and restores from it (same as the "Import existing setup" UI mode).
+
+4. **Fresh-repo path when repo is empty or absent.** If `GITHUB_WORKSPACE_REPO`
+   points to an empty or non-existent repo, a new git repo is initialised and
+   pushed (same as the "New setup" UI mode).
+
+5. **UI falls back to explicit entry when env vars are absent.** If `GITHUB_TOKEN`
+   or `GITHUB_WORKSPACE_REPO` are not present in `.env`, the onboarding form
+   still collects them — existing behaviour unchanged.
+
+6. **Hourly git sync cron is installed.** Regardless of whether the GitHub
+   values came from env vars or the form, the hourly sync cron is installed
+   as part of onboarding.
+
+## Verifications
+
+> All behaviours below must be verified by scripts, not by AI agent judgement.
+> Never allow a graceful skip when external API credentials are present —
+> if the API rejects the request the test must fail, not pass silently.
+
+### UI hides GitHub section when env vars are detected
+
+- [ ] A status/check endpoint (existing or new) exposes whether `GITHUB_TOKEN`
+  and `GITHUB_WORKSPACE_REPO` are already configured so the UI can conditionally
+  hide the GitHub fields. Verify the endpoint returns a truthy flag when both
+  vars are non-empty in `.env`:
+  ```bash
+  grep -q 'githubConfigured.*true' <(curl -sf http://localhost:3000/api/status)
+  # or equivalent field name returned by the status endpoint
+  ```
+
+- [ ] When both vars are set, the onboarding form submission does **not** include
+  `GITHUB_TOKEN` or `GITHUB_WORKSPACE_REPO` in the `vars` array (confirmed by
+  the backend acceptance test below — the backend must accept this absence).
+
+### Git steps auto-complete from env vars
+
+- [ ] When `GITHUB_TOKEN` and `GITHUB_WORKSPACE_REPO` are present in `.env`
+  before onboarding, submitting `POST /api/onboard` with a valid model key and
+  channel token but **without** `GITHUB_TOKEN` or `GITHUB_WORKSPACE_REPO` in
+  the `vars` array returns `{ ok: true }` and completes onboarding:
+  ```bash
+  # Seed .env with GitHub vars
+  echo "GITHUB_TOKEN=$GITHUB_TOKEN" >> "$ALPHACLAW_ROOT_DIR/.env"
+  echo "GITHUB_WORKSPACE_REPO=$GITHUB_WORKSPACE_REPO" >> "$ALPHACLAW_ROOT_DIR/.env"
+  # Submit onboarding without GitHub vars in body
+  curl -sf -X POST http://localhost:3000/api/onboard \
+    -H "Content-Type: application/json" \
+    -d '{"vars":[{"key":"ANTHROPIC_API_KEY","value":"..."},{"key":"TELEGRAM_BOT_TOKEN","value":"..."}],"modelKey":"anthropic/claude-sonnet-4-6"}' \
+    | grep -q '"ok":true'
+  ```
+
+- [ ] After onboarding completes, `$ALPHACLAW_ROOT_DIR/.openclaw/.git` exists:
+  ```bash
+  [ -d "$ALPHACLAW_ROOT_DIR/.openclaw/.git" ]
+  ```
+
+- [ ] `git -C $ALPHACLAW_ROOT_DIR/.openclaw remote get-url origin` returns
+  `https://github.com/<GITHUB_WORKSPACE_REPO>.git`.
+
+- [ ] The hourly git sync cron file is installed:
+  ```bash
+  [ -f /etc/cron.d/openclaw-hourly-sync ]
+  grep -q 'hourly-git-sync' /etc/cron.d/openclaw-hourly-sync
+  ```
+
+- [ ] `$ALPHACLAW_ROOT_DIR/onboarded.json` is written and contains
+  `"onboarded": true`.
+
+### Import path (non-empty backup repo)
+
+- [ ] When `GITHUB_WORKSPACE_REPO` points to a repo that already contains
+  `openclaw.json`, onboarding completes in import mode: the restored
+  `$ALPHACLAW_ROOT_DIR/.openclaw/openclaw.json` contains the same root keys
+  as the source backup:
+  ```bash
+  diff <(jq -S 'keys' "$ALPHACLAW_ROOT_DIR/.openclaw/openclaw.json") \
+       <(jq -S 'keys' backup_openclaw.json)
+  # exits 0
+  ```
+
+### Fresh-repo path (empty or non-existent repo)
+
+- [ ] When `GITHUB_WORKSPACE_REPO` points to an empty or non-existent repo,
+  onboarding completes in new-setup mode: `onboarded.json` is written,
+  `openclaw.json` is created under `.openclaw/`, and the remote repo is
+  created/pushed:
+  ```bash
+  grep -q '"onboarded": true' "$ALPHACLAW_ROOT_DIR/onboarded.json"
+  [ -f "$ALPHACLAW_ROOT_DIR/.openclaw/openclaw.json" ]
+  git -C "$ALPHACLAW_ROOT_DIR/.openclaw" ls-remote --exit-code origin main
+  ```
+
+### Fine-grained PAT + non-existent repo
+
+- [ ] When `GITHUB_TOKEN` is a fine-grained PAT (`github_pat_...`) and
+  `GITHUB_WORKSPACE_REPO` does not exist, `POST /api/onboard` returns a 400
+  error whose message references the `repo` scope or classic PAT requirement:
+  ```bash
+  curl -sf -X POST http://localhost:3000/api/onboard \
+    -H "Content-Type: application/json" \
+    -d '{"vars":[{"key":"ANTHROPIC_API_KEY","value":"..."},{"key":"TELEGRAM_BOT_TOKEN","value":"..."}],"modelKey":"anthropic/claude-sonnet-4-6"}' \
+    | grep -qiE 'classic PAT|repo scope'
+  ```
+
+### Fallback when env vars are absent
+
+- [ ] When `GITHUB_TOKEN` and `GITHUB_WORKSPACE_REPO` are absent from `.env`
+  **and** absent from the submitted `vars` array, `POST /api/onboard` returns
+  a 400 error with `"GitHub token and workspace repo are required"` — the
+  existing validation error is preserved:
+  ```bash
+  curl -sf -X POST http://localhost:3000/api/onboard \
+    -H "Content-Type: application/json" \
+    -d '{"vars":[{"key":"ANTHROPIC_API_KEY","value":"..."},{"key":"TELEGRAM_BOT_TOKEN","value":"..."}],"modelKey":"anthropic/claude-sonnet-4-6"}' \
+    | grep -q 'GitHub token and workspace repo are required'
+  ```
+
+### Env var promotion preserved
+
+- [ ] `GITHUB_TOKEN` and `GITHUB_WORKSPACE_REPO` set as platform env vars are
+  present in `.env` before the server starts (existing `kVarsToPromote`
+  behaviour — no change required, just confirmed by test):
+  ```bash
+  GITHUB_TOKEN=test_token GITHUB_WORKSPACE_REPO=owner/repo alphaclaw start &
+  sleep 3 && kill %1
+  grep -E '^GITHUB_TOKEN=test_token' "$ALPHACLAW_ROOT_DIR/.env"
+  grep -E '^GITHUB_WORKSPACE_REPO=owner/repo' "$ALPHACLAW_ROOT_DIR/.env"
+  ```
+
+## Token Requirements
+
+`GITHUB_TOKEN` must have sufficient permissions to read, write, and (if the
+repo does not yet exist) create the target repository.
+
+| Token type | Required permissions |
+|---|---|
+| Classic PAT (`ghp_...`) | `repo` scope — covers create, read, and push for private repos. `public_repo` suffices for public repos only. |
+| Fine-grained PAT (`github_pat_...`) | **Contents** (read + write) and **Metadata** (read) on the target repo. |
+
+**Fine-grained PAT limitation:** the GitHub API returns 403 when a fine-grained
+PAT attempts to create a new repository. If `GITHUB_WORKSPACE_REPO` does not
+exist and `GITHUB_TOKEN` is a fine-grained PAT, the onboarding must fail with a
+descriptive error directing the user to use a classic PAT with `repo` scope
+instead.
+
+**Owner match:** the token's authenticated GitHub user must be the owner of
+`GITHUB_WORKSPACE_REPO`, or the owner must be a GitHub organisation the token
+can access.
+
+## Constraints
+
+- Model authentication and channel authentication are **not** automated from
+  env vars — they remain UI-only; this feature must not add env-var handling
+  for AI keys, Telegram tokens, Discord tokens, or any other channel/model
+  credential.
+- `validateOnboardingInput` in `lib/server/onboarding/validation.js` must read
+  the current `.env` file values for `GITHUB_TOKEN` and `GITHUB_WORKSPACE_REPO`
+  when they are absent from the submitted `vars` array, so the `hasGithub`
+  check can be satisfied by pre-promoted env vars.
+- No changes to the model selection or channel setup steps in `completeOnboarding`.
+- No new startup-time auto-onboarding: `onboarded.json` is still only written
+  when the user completes the Setup UI (model + channel step). The server must
+  not write `onboarded.json` on startup without UI interaction.
+- Existing onboarding unit tests (`tests/server/routes-onboarding.test.js`,
+  `tests/server/onboarding-validation.test.js`) must continue to pass.
+
+## When You Need Human Feedback
+
+(none)
