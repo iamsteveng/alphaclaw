@@ -2,38 +2,38 @@
 
 ## Goals
 
-When a user deploys a fresh AlphaClaw instance with `GITHUB_TOKEN` and
-`GITHUB_WORKSPACE_REPO` pointing to a non-empty existing backup repo, **and**
-all required credential env vars are present in the platform environment, the
-server completes onboarding automatically on first boot — without any human
-interaction with the Setup UI.
+When `GITHUB_TOKEN` and `GITHUB_WORKSPACE_REPO` are present as platform
+environment variables (e.g. injected by Railway or Docker), the onboarding
+flow automatically handles all **git-related steps** using those values —
+without requiring the user to enter GitHub credentials in the Setup UI form.
+
+Model authentication and channel authentication remain UI-only and are
+**out of scope** for this feature.
 
 Observable behaviours:
 
-1. **Auto-init on startup.** If `onboarded.json` is absent, required env vars
-   are all present, and `GITHUB_WORKSPACE_REPO` resolves to a non-empty repo
-   that contains an `openclaw.json`, the server runs the headless import
-   sequence and writes `onboarded.json` before listening for requests.
+1. **Git steps auto-complete from env vars.** When the user submits the
+   onboarding form (with model + channel credentials), if `GITHUB_TOKEN` and
+   `GITHUB_WORKSPACE_REPO` are already present in the `.env` file (promoted
+   from platform env by the existing `kVarsToPromote` step in
+   `bin/alphaclaw.js`), the backend uses those values to perform all git
+   operations — the user does not need to supply GitHub credentials in the form.
 
-2. **Import mirrors the UI flow.** The restored state (config, skills, cron
-   jobs) is identical to what the "Import existing setup" UI path produces for
-   the same source repo.
+2. **Import path when repo is non-empty.** If `GITHUB_WORKSPACE_REPO` points
+   to a repo that contains an existing `openclaw.json`, the git setup clones
+   and restores from it (same as the "Import existing setup" UI mode).
 
-3. **Gateway starts without UI visit.** After auto-init, the OpenClaw gateway
-   is started and a fresh Telegram/Discord/channel session can be initiated
-   immediately.
+3. **Fresh-repo path when repo is empty or absent.** If `GITHUB_WORKSPACE_REPO`
+   points to an empty or non-existent repo, a new git repo is initialised and
+   pushed (same as the "New setup" UI mode).
 
-4. **Idempotent re-deploys.** On all subsequent boots, the presence of
-   `onboarded.json` causes the server to skip the auto-init path entirely and
-   proceed directly to `runOnboardedBootSequence`.
+4. **UI falls back to explicit entry when env vars are absent.** If `GITHUB_TOKEN`
+   or `GITHUB_WORKSPACE_REPO` are not present in `.env`, the onboarding form
+   still collects them — existing behaviour unchanged.
 
-5. **Graceful fallback.** If any required env var is missing, or the GitHub
-   repo is inaccessible, the server falls back to "Awaiting onboarding via
-   Setup UI" with a descriptive log line — no crash, no partial state written.
-
-6. **Fresh-repo variant.** If `GITHUB_WORKSPACE_REPO` points to an empty or
-   non-existent repo (and a model key env var is set), the server runs the
-   headless fresh-onboarding path instead, creating a new repo and config.
+5. **Hourly git sync cron is installed.** Regardless of whether the GitHub
+   values came from env vars or the form, the hourly sync cron is installed
+   as part of onboarding.
 
 ## Verifications
 
@@ -41,140 +41,116 @@ Observable behaviours:
 > Never allow a graceful skip when external API credentials are present —
 > if the API rejects the request the test must fail, not pass silently.
 
-### Headless import path (primary case)
+### Git steps auto-complete from env vars
 
-- [ ] When `GITHUB_TOKEN`, `GITHUB_WORKSPACE_REPO` (pointing to a non-empty
-  backup repo), at least one AI key, and at least one channel token are set,
-  and `onboarded.json` does not exist, starting the server writes
-  `onboarded.json` within 120 s:
+- [ ] When `GITHUB_TOKEN` and `GITHUB_WORKSPACE_REPO` are present in `.env`
+  before onboarding, submitting `POST /api/onboard` with a valid model key and
+  channel token but **without** `GITHUB_TOKEN` or `GITHUB_WORKSPACE_REPO` in
+  the `vars` array returns `{ ok: true }` and completes onboarding:
   ```bash
-  timeout 120 alphaclaw start &
-  until [ -f "$ALPHACLAW_ROOT_DIR/onboarded.json" ]; do sleep 2; done
-  grep -q '"onboarded": true' "$ALPHACLAW_ROOT_DIR/onboarded.json"
+  # Seed .env with GitHub vars
+  echo "GITHUB_TOKEN=$GITHUB_TOKEN" >> "$ALPHACLAW_ROOT_DIR/.env"
+  echo "GITHUB_WORKSPACE_REPO=$GITHUB_WORKSPACE_REPO" >> "$ALPHACLAW_ROOT_DIR/.env"
+  # Submit onboarding without GitHub vars in body
+  curl -sf -X POST http://localhost:3000/api/onboard \
+    -H "Content-Type: application/json" \
+    -d '{"vars":[{"key":"ANTHROPIC_API_KEY","value":"..."},{"key":"TELEGRAM_BOT_TOKEN","value":"..."}],"modelKey":"anthropic/claude-sonnet-4-6"}' \
+    | grep -q '"ok":true'
   ```
 
-- [ ] After auto-init, `$ALPHACLAW_ROOT_DIR/.openclaw/.git` exists and
-  `git -C $ALPHACLAW_ROOT_DIR/.openclaw remote get-url origin` outputs
+- [ ] After onboarding completes, `$ALPHACLAW_ROOT_DIR/.openclaw/.git` exists:
+  ```bash
+  [ -d "$ALPHACLAW_ROOT_DIR/.openclaw/.git" ]
+  ```
+
+- [ ] `git -C $ALPHACLAW_ROOT_DIR/.openclaw remote get-url origin` returns
   `https://github.com/<GITHUB_WORKSPACE_REPO>.git`.
 
-- [ ] After auto-init, `$ALPHACLAW_ROOT_DIR/.openclaw/openclaw.json` exists
-  and contains the same root keys (`gateway`, `channels`, `plugins`) as the
-  source backup repo's `openclaw.json`:
-  ```bash
-  diff <(jq -S 'keys' restored_openclaw.json) <(jq -S 'keys' backup_openclaw.json)
-  # exits 0
-  ```
-
-- [ ] The hourly git sync cron is installed:
+- [ ] The hourly git sync cron file is installed:
   ```bash
   [ -f /etc/cron.d/openclaw-hourly-sync ]
   grep -q 'hourly-git-sync' /etc/cron.d/openclaw-hourly-sync
   ```
 
-- [ ] The OpenClaw gateway process is running after auto-init:
+- [ ] `$ALPHACLAW_ROOT_DIR/onboarded.json` is written and contains
+  `"onboarded": true`.
+
+### Import path (non-empty backup repo)
+
+- [ ] When `GITHUB_WORKSPACE_REPO` points to a repo that already contains
+  `openclaw.json`, onboarding completes in import mode: the restored
+  `$ALPHACLAW_ROOT_DIR/.openclaw/openclaw.json` contains the same root keys
+  as the source backup:
   ```bash
-  curl -sf http://127.0.0.1:18789/health | grep -q '"status":"ok"'
+  diff <(jq -S 'keys' "$ALPHACLAW_ROOT_DIR/.openclaw/openclaw.json") \
+       <(jq -S 'keys' backup_openclaw.json)
+  # exits 0
   ```
 
-- [ ] If `GITHUB_TOKEN` is absent, the server logs
-  `[alphaclaw] Awaiting onboarding via Setup UI` and does **not** write
-  `onboarded.json`:
+### Fresh-repo path (empty or non-existent repo)
+
+- [ ] When `GITHUB_WORKSPACE_REPO` points to an empty or non-existent repo,
+  onboarding completes in new-setup mode: `onboarded.json` is written,
+  `openclaw.json` is created under `.openclaw/`, and the remote repo is
+  created/pushed:
   ```bash
-  GITHUB_TOKEN= alphaclaw start &
-  sleep 5
-  [ ! -f "$ALPHACLAW_ROOT_DIR/onboarded.json" ]
+  grep -q '"onboarded": true' "$ALPHACLAW_ROOT_DIR/onboarded.json"
+  [ -f "$ALPHACLAW_ROOT_DIR/.openclaw/openclaw.json" ]
+  git -C "$ALPHACLAW_ROOT_DIR/.openclaw" ls-remote --exit-code origin main
   ```
 
-- [ ] If `GITHUB_WORKSPACE_REPO` is absent, same behaviour as above.
+### Fallback when env vars are absent
 
-- [ ] If the GitHub API rejects the token (401), the server logs a descriptive
-  error referencing token verification failure and does **not** write
-  `onboarded.json`.
-
-- [ ] If the repo does not exist and `GITHUB_TOKEN` has no create-repo
-  permission, the server logs a descriptive error and does **not** write
-  `onboarded.json`.
-
-### Idempotency
-
-- [ ] On a second start with `onboarded.json` already present, the server does
-  **not** call the auto-init path (verify by absence of `[auto-init]` log
-  prefix in output).
-
-- [ ] After a re-deploy that wipes `onboarded.json` but leaves `.openclaw/`
-  intact, auto-init detects the existing `.git` dir and skips `git init`
-  (verify log output includes `[auto-init] Skipped git init (existing repo)`
-  or equivalent).
-
-### Fresh-repo variant
-
-- [ ] When `GITHUB_WORKSPACE_REPO` points to an empty or non-existent repo and
-  a model key env var (`ALPHACLAW_INIT_MODEL`) is set, the server completes
-  fresh onboarding: `onboarded.json` written, `openclaw.json` created, gateway
-  started.
-
-### Env var promotion
-
-- [ ] After auto-init, `$ALPHACLAW_ROOT_DIR/.env` contains `GITHUB_TOKEN` and
-  `GITHUB_WORKSPACE_REPO` with the values injected as platform env vars (not
-  empty):
+- [ ] When `GITHUB_TOKEN` and `GITHUB_WORKSPACE_REPO` are absent from `.env`
+  **and** absent from the submitted `vars` array, `POST /api/onboard` returns
+  a 400 error with `"GitHub token and workspace repo are required"` — the
+  existing validation error is preserved:
   ```bash
-  grep -E '^GITHUB_TOKEN=.+' "$ALPHACLAW_ROOT_DIR/.env"
-  grep -E '^GITHUB_WORKSPACE_REPO=.+' "$ALPHACLAW_ROOT_DIR/.env"
+  curl -sf -X POST http://localhost:3000/api/onboard \
+    -H "Content-Type: application/json" \
+    -d '{"vars":[{"key":"ANTHROPIC_API_KEY","value":"..."},{"key":"TELEGRAM_BOT_TOKEN","value":"..."}],"modelKey":"anthropic/claude-sonnet-4-6"}' \
+    | grep -q 'GitHub token and workspace repo are required'
+  ```
+
+### Env var promotion preserved
+
+- [ ] `GITHUB_TOKEN` and `GITHUB_WORKSPACE_REPO` set as platform env vars are
+  present in `.env` before the server starts (existing `kVarsToPromote`
+  behaviour — no change required, just confirmed by test):
+  ```bash
+  GITHUB_TOKEN=test_token GITHUB_WORKSPACE_REPO=owner/repo alphaclaw start &
+  sleep 3 && kill %1
+  grep -E '^GITHUB_TOKEN=test_token' "$ALPHACLAW_ROOT_DIR/.env"
+  grep -E '^GITHUB_WORKSPACE_REPO=owner/repo' "$ALPHACLAW_ROOT_DIR/.env"
   ```
 
 ## Constraints
 
-- The existing UI-based onboarding flow (`POST /api/onboard`) must remain
-  unchanged — no existing onboarding tests may be broken.
-- `validateOnboardingInput` in `lib/server/onboarding/validation.js` must still
-  gate all headless attempts with the same rules as the UI path.
-- `isOnboarded()` in `lib/server/gateway.js` must remain a single check on
-  `onboarded.json` — do not add secondary markers.
-- The headless auto-init must run **before** `server.listen()` completes (or
-  immediately after, blocking `runOnboardedBootSequence`), not as a background
-  task that races with incoming requests.
-- `lib/server/init/server-lifecycle.js` (`startServerLifecycle`) is the correct
-  insertion point — do not modify the bin entry point startup sequence for this.
-- `kVarsToPromote` in `bin/alphaclaw.js` already promotes `GITHUB_TOKEN` and
-  `GITHUB_WORKSPACE_REPO` to `.env` before the server starts; rely on this
-  rather than re-reading platform env vars inside the headless path.
-- Do not break the Railway / Docker container setup: auto-init must handle the
-  case where `/etc/cron.d/` is writable (container) and gracefully skip cron
-  installation when it is not.
+- Model authentication and channel authentication are **not** automated from
+  env vars — they remain UI-only; this feature must not add env-var handling
+  for AI keys, Telegram tokens, Discord tokens, or any other channel/model
+  credential.
+- `validateOnboardingInput` in `lib/server/onboarding/validation.js` must read
+  the current `.env` file values for `GITHUB_TOKEN` and `GITHUB_WORKSPACE_REPO`
+  when they are absent from the submitted `vars` array, so the `hasGithub`
+  check can be satisfied by pre-promoted env vars.
+- No changes to the model selection or channel setup steps in `completeOnboarding`.
+- The existing behaviour when GitHub vars are supplied in the form must be
+  unchanged — form values take precedence over env file values.
+- No new startup-time auto-onboarding: `onboarded.json` is still only written
+  when the user completes the Setup UI (model + channel step). The server must
+  not write `onboarded.json` on startup without UI interaction.
+- Existing onboarding unit tests (`tests/server/routes-onboarding.test.js`,
+  `tests/server/onboarding-validation.test.js`) must continue to pass.
 
 ## When You Need Human Feedback
 
-1. **Model key for headless init.**
-   `completeOnboarding` always calls `openclaw models set <modelKey>`. In the
-   UI, the user picks a model from a list. For headless import, the primary
-   model may be readable from the backup's `openclaw.json`
-   (`models.primary` field — needs verification against actual openclaw config
-   schema). For headless fresh setup, no model is pre-selected.
-   
-   Two options:
-   - (a) Introduce `ALPHACLAW_INIT_MODEL` env var (e.g.
-     `anthropic/claude-sonnet-4-6`). Required for fresh setup; optional for
-     import (falls back to reading from backup config if present).
-   - (b) For import mode only: skip `openclaw models set` if a model is already
-     configured in the restored `openclaw.json`.
-   
-   **Suggest a resolution:** option (a) — a single explicit env var is easier
-   to document and test than conditional config-file introspection.
-   
-   @iamsteveng: which approach, and what should the env var be named?
+1. **Precedence when both sources are present.**
+   If `GITHUB_TOKEN` is in `.env` (promoted from platform) and the user also
+   supplies a different value in the form `vars` array, which wins?
+   Form value is the natural answer (same pattern as the rest of onboarding),
+   but needs explicit confirmation to avoid surprise behaviour for users who
+   rotate tokens.
 
-2. **Scope: import-only or also fresh setup?**
-   The issue text focuses on "restore from an existing github repo". The fresh-
-   setup headless path (Goal 6) is a natural extension but may be out of scope.
-   
-   @iamsteveng: should fresh-repo headless onboarding be part of this PR, or
-   deferred to a follow-up?
-
-3. **Timing: block server.listen or run immediately after?**
-   Auto-init runs `openclaw onboard` (up to 120 s) and `git clone`. If this
-   blocks `server.listen`, Railway's health check may time out. If it runs
-   after listen, the `/api/status` endpoint returns "not onboarded" briefly.
-   
-   @iamsteveng: is a brief "not onboarded" window acceptable, or must the
-   health check only succeed after init is complete?
+   @iamsteveng: confirm form value takes precedence over `.env` promoted value,
+   or should the env-var value always win?
