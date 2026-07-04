@@ -31,6 +31,12 @@ RUN npm install -g @anthropic-ai/claude-code@2.1.133 \
  && claude --version
 ENV CLAUDE_CONFIG_DIR=/data/.claude
 
+# oh-my-claudecode (OMC) — multi-agent orchestration layer for Claude Code.
+# Installed globally here; entrypoint.sh runs its installer with HOME=/data at boot
+# so its config lands in the persisted /data/.claude (see CLAUDE_CONFIG_DIR above).
+RUN npm install -g oh-my-claudecode@0.2.15 \
+ && oh-my-claudecode --version
+
 ENV PATH="/app/node_modules/.bin:$PATH"
 ENV ALPHACLAW_ROOT_DIR=/data
 

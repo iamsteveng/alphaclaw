@@ -142,6 +142,18 @@ fi
 echo "[openclaw] Installing @openclaw/deepseek-provider (required since 2026.6.10)..."
 HOME=/data openclaw plugins install @openclaw/deepseek-provider 2>&1 || echo "[openclaw] deepseek plugin install warning (may already be installed)"
 
+# Install ACP runtime backend so the main agent can dispatch to Claude Code (/acp spawn claude).
+# Idempotent: no-op if already installed. Must run before alphaclaw starts the gateway.
+echo "[openclaw] Installing @openclaw/acpx (ACP runtime backend)..."
+HOME=/data openclaw plugins install @openclaw/acpx 2>&1 || echo "[openclaw] acpx plugin install warning (may already be installed)"
+
+# Sync oh-my-claudecode (OMC) into the persisted Claude config on every boot.
+# Must use HOME=/data: oh-my-claudecode's installer resolves paths from process.env.HOME
+# directly (not CLAUDE_CONFIG_DIR) — without this override it would write to /root/.claude
+# and never be picked up by Claude Code, which reads CLAUDE_CONFIG_DIR=/data/.claude.
+echo "[oh-my-claudecode] Syncing OMC config into /data/.claude..."
+HOME=/data oh-my-claudecode install --no-tui 2>&1 || echo "[oh-my-claudecode] install warning (non-fatal)"
+
 # Start system cron daemon so /etc/cron.d/openclaw-hourly-sync runs on schedule
 /usr/sbin/cron
 
