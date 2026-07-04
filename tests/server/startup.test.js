@@ -12,6 +12,9 @@ describe("server/startup", () => {
     const ensureUsageTrackerPluginConfig = vi.fn(() =>
       callOrder.push("ensureUsageTrackerPluginConfig"),
     );
+    const ensureAcpAgentConfig = vi.fn(() =>
+      callOrder.push("ensureAcpAgentConfig"),
+    );
     const doSyncPromptFiles = vi.fn(() => callOrder.push("doSyncPromptFiles"));
     const reloadEnv = vi.fn(() => callOrder.push("reloadEnv"));
     const readEnvFile = vi.fn(() => {
@@ -35,6 +38,7 @@ describe("server/startup", () => {
     runOnboardedBootSequence({
       ensureManagedExecDefaults,
       ensureUsageTrackerPluginConfig,
+      ensureAcpAgentConfig,
       doSyncPromptFiles,
       reloadEnv,
       syncChannelConfig,
@@ -50,6 +54,7 @@ describe("server/startup", () => {
     expect(callOrder).toEqual([
       "ensureManagedExecDefaults",
       "ensureUsageTrackerPluginConfig",
+      "ensureAcpAgentConfig",
       "doSyncPromptFiles",
       "reloadEnv",
       "readEnvFile",
