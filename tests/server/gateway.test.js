@@ -93,7 +93,7 @@ describe("server/gateway restart behavior", () => {
     expect(execSyncMock).toHaveBeenCalledTimes(1);
     expect(execSyncMock).toHaveBeenCalledWith("openclaw gateway --force", {
       env: expect.any(Object),
-      timeout: 15000,
+      timeout: 60000,
       encoding: "utf8",
     });
     expect(spawnMock).toHaveBeenCalledTimes(1);
@@ -164,7 +164,7 @@ describe("server/gateway restart behavior", () => {
     expect(execSyncMock).toHaveBeenCalledTimes(1);
     expect(execSyncMock).toHaveBeenCalledWith("openclaw gateway --force", {
       env: expect.any(Object),
-      timeout: 15000,
+      timeout: 60000,
       encoding: "utf8",
     });
     expect(spawnMock).not.toHaveBeenCalled();
