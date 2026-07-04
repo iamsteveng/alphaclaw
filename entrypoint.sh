@@ -148,11 +148,12 @@ echo "[openclaw] Installing @openclaw/acpx (ACP runtime backend)..."
 HOME=/data openclaw plugins install @openclaw/acpx 2>&1 || echo "[openclaw] acpx plugin install warning (may already be installed)"
 
 # Sync oh-my-claudecode (OMC) into the persisted Claude config on every boot.
-# Must use HOME=/data: oh-my-claudecode's installer resolves paths from process.env.HOME
-# directly (not CLAUDE_CONFIG_DIR) — without this override it would write to /root/.claude
-# and never be picked up by Claude Code, which reads CLAUDE_CONFIG_DIR=/data/.claude.
+# Must use HOME=/data: omc's setup resolves paths from process.env.HOME directly
+# (not CLAUDE_CONFIG_DIR unless explicitly set) — without this override it would
+# write to /root/.claude and never be picked up by Claude Code, which reads
+# CLAUDE_CONFIG_DIR=/data/.claude.
 echo "[oh-my-claudecode] Syncing OMC config into /data/.claude..."
-HOME=/data oh-my-claudecode install --no-tui 2>&1 || echo "[oh-my-claudecode] install warning (non-fatal)"
+HOME=/data omc setup --quiet 2>&1 || echo "[oh-my-claudecode] setup warning (non-fatal)"
 
 # Start system cron daemon so /etc/cron.d/openclaw-hourly-sync runs on schedule
 /usr/sbin/cron
