@@ -239,6 +239,27 @@ describe("server/auth-profiles", () => {
     expect(config.gateway.port).toBe(18789);
   });
 
+  // OpenClaw's gateway hard-fails startup on any unresolvable ${VAR} secret
+  // ref in openclaw.json, so an empty/cleared glm key must remove the
+  // models.providers.glm block rather than leave it pointing at nothing.
+  it("removes models.providers.glm when the glm profile's key is cleared to empty", () => {
+    ap.upsertProfile("glm:default", {
+      type: "api_key",
+      provider: "glm",
+      key: "glm-test-key",
+    });
+    expect(readJson("openclaw.json").models.providers.glm).toBeDefined();
+
+    ap.upsertProfile("glm:default", {
+      type: "api_key",
+      provider: "glm",
+      key: "",
+    });
+
+    const config = readJson("openclaw.json");
+    expect(config.models?.providers?.glm).toBeUndefined();
+  });
+
   it("setModelConfig writes primary and configuredModels", () => {
     ap.setModelConfig({
       primary: "openai/gpt-5.1-codex",
