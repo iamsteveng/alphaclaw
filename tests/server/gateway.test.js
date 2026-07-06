@@ -232,6 +232,44 @@ describe("server/gateway restart behavior", () => {
     );
   });
 
+  it("clears stale npm and compile caches on the volume", () => {
+    const removed = [];
+    fs.existsSync = vi.fn((targetPath) => {
+      const p = String(targetPath);
+      return p.endsWith(path.join(".npm", "_cacache")) || p.endsWith("openclaw-compile-cache");
+    });
+    fs.rmSync = vi.fn((targetPath) => {
+      removed.push(targetPath);
+    });
+    delete require.cache[modulePath];
+    const gateway = require(modulePath);
+
+    gateway.cleanupStaleVolumeCaches();
+
+    expect(removed).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(path.join(".npm", "_cacache")),
+        expect.stringContaining("openclaw-compile-cache"),
+      ]),
+    );
+    expect(fs.rmSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ recursive: true, force: true }),
+    );
+  });
+
+  it("skips volume cache cleanup when caches are absent", () => {
+    fs.existsSync = vi.fn(() => false);
+    const rmSyncMock = vi.fn();
+    fs.rmSync = rmSyncMock;
+    delete require.cache[modulePath];
+    const gateway = require(modulePath);
+
+    gateway.cleanupStaleVolumeCaches();
+
+    expect(rmSyncMock).not.toHaveBeenCalled();
+  });
+
   it("marks managed child exit as expected before force restart", async () => {
     const child = createChild();
     const spawnMock = vi.fn(() => child);
