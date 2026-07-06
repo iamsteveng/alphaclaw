@@ -15,6 +15,9 @@ describe("server/startup", () => {
     const ensureAcpAgentConfig = vi.fn(() =>
       callOrder.push("ensureAcpAgentConfig"),
     );
+    const ensureGlmProviderConfig = vi.fn(() =>
+      callOrder.push("ensureGlmProviderConfig"),
+    );
     const doSyncPromptFiles = vi.fn(() => callOrder.push("doSyncPromptFiles"));
     const reloadEnv = vi.fn(() => callOrder.push("reloadEnv"));
     const readEnvFile = vi.fn(() => {
@@ -39,6 +42,7 @@ describe("server/startup", () => {
       ensureManagedExecDefaults,
       ensureUsageTrackerPluginConfig,
       ensureAcpAgentConfig,
+      ensureGlmProviderConfig,
       doSyncPromptFiles,
       reloadEnv,
       syncChannelConfig,
@@ -55,6 +59,7 @@ describe("server/startup", () => {
       "ensureManagedExecDefaults",
       "ensureUsageTrackerPluginConfig",
       "ensureAcpAgentConfig",
+      "ensureGlmProviderConfig",
       "doSyncPromptFiles",
       "reloadEnv",
       "readEnvFile",
