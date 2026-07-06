@@ -403,6 +403,33 @@ describe("server/routes/models", () => {
     expect(deps.reloadEnv).toHaveBeenCalledTimes(1);
   });
 
+  it("writes a glm provider API key back to its env var", async () => {
+    const deps = createModelDeps();
+    deps.shellCmd.mockResolvedValue("");
+    deps.authProfiles.getEnvVarForApiKeyProvider.mockImplementation((provider) =>
+      provider === "glm" ? "GLM_API_KEY" : "",
+    );
+    deps.readEnvFile.mockReturnValue([{ key: "GLM_API_KEY", value: "" }]);
+    const app = createApp(deps);
+
+    const res = await request(app).put("/api/models/config").send({
+      profiles: [
+        {
+          id: "glm:default",
+          type: "api_key",
+          provider: "glm",
+          key: "glm-live-123",
+        },
+      ],
+    });
+
+    expect(res.status).toBe(200);
+    expect(deps.writeEnvFile).toHaveBeenCalledWith([
+      { key: "GLM_API_KEY", value: "glm-live-123" },
+    ]);
+    expect(deps.reloadEnv).toHaveBeenCalledTimes(1);
+  });
+
   it("syncs env-backed api-key profiles into auth storage on PUT /api/models/config", async () => {
     const deps = createModelDeps();
     deps.shellCmd.mockResolvedValue("");

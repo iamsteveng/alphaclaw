@@ -215,6 +215,30 @@ describe("server/auth-profiles", () => {
     expect(config.gateway.port).toBe(18789);
   });
 
+  it("upserts a glm profile and pins openclaw.json to the BigModel endpoint", () => {
+    ap.upsertProfile("glm:default", {
+      type: "api_key",
+      provider: "glm",
+      key: "glm-test-key",
+    });
+
+    const config = readJson("openclaw.json");
+    expect(config.auth.profiles["glm:default"]).toEqual({
+      provider: "glm",
+      mode: "api_key",
+    });
+    expect(config.models.providers.glm.baseUrl).toBe(
+      "https://open.bigmodel.cn/api/paas/v4",
+    );
+    expect(config.models.providers.glm.apiKey).toBe("${GLM_API_KEY}");
+    expect(config.models.providers.glm.api).toBe("openai-completions");
+    const modelIds = config.models.providers.glm.models.map((m) => m.id);
+    expect(modelIds).toEqual(
+      expect.arrayContaining(["glm-5.2", "glm-4-voice", "charglm-4"]),
+    );
+    expect(config.gateway.port).toBe(18789);
+  });
+
   it("setModelConfig writes primary and configuredModels", () => {
     ap.setModelConfig({
       primary: "openai/gpt-5.1-codex",
