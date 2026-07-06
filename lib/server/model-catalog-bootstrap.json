@@ -4438,6 +4438,137 @@
       "key": "zai/glm-5v-turbo",
       "provider": "zai",
       "label": "glm-5v-turbo"
+    },
+    {
+      "key": "glm/glm-5.2",
+      "provider": "glm",
+      "label": "GLM-5.2"
+    },
+    {
+      "key": "glm/glm-5.1",
+      "provider": "glm",
+      "label": "GLM-5.1"
+    },
+    {
+      "key": "glm/glm-5-turbo",
+      "provider": "glm",
+      "label": "GLM-5-Turbo"
+    },
+    {
+      "key": "glm/glm-5",
+      "provider": "glm",
+      "label": "GLM-5"
+    },
+    {
+      "key": "glm/glm-4.7",
+      "provider": "glm",
+      "label": "GLM-4.7"
+    },
+    {
+      "key": "glm/glm-4.7-flash",
+      "provider": "glm",
+      "label": "GLM-4.7-Flash"
+    },
+    {
+      "key": "glm/glm-4.7-flashx",
+      "provider": "glm",
+      "label": "GLM-4.7-FlashX"
+    },
+    {
+      "key": "glm/glm-4.6",
+      "provider": "glm",
+      "label": "GLM-4.6"
+    },
+    {
+      "key": "glm/glm-4.5-air",
+      "provider": "glm",
+      "label": "GLM-4.5-Air"
+    },
+    {
+      "key": "glm/glm-4.5-airx",
+      "provider": "glm",
+      "label": "GLM-4.5-AirX"
+    },
+    {
+      "key": "glm/glm-4.5-flash",
+      "provider": "glm",
+      "label": "GLM-4.5-Flash"
+    },
+    {
+      "key": "glm/glm-4-flash-250414",
+      "provider": "glm",
+      "label": "GLM-4-Flash (250414)"
+    },
+    {
+      "key": "glm/glm-4-flashx-250414",
+      "provider": "glm",
+      "label": "GLM-4-FlashX (250414)"
+    },
+    {
+      "key": "glm/glm-5v-turbo",
+      "provider": "glm",
+      "label": "GLM-5V-Turbo",
+      "modality": "vision"
+    },
+    {
+      "key": "glm/glm-4.6v",
+      "provider": "glm",
+      "label": "GLM-4.6V",
+      "modality": "vision"
+    },
+    {
+      "key": "glm/glm-4.6v-flash",
+      "provider": "glm",
+      "label": "GLM-4.6V-Flash",
+      "modality": "vision"
+    },
+    {
+      "key": "glm/glm-4.6v-flashx",
+      "provider": "glm",
+      "label": "GLM-4.6V-FlashX",
+      "modality": "vision"
+    },
+    {
+      "key": "glm/glm-4v-flash",
+      "provider": "glm",
+      "label": "GLM-4V-Flash",
+      "modality": "vision"
+    },
+    {
+      "key": "glm/glm-4.1v-thinking-flashx",
+      "provider": "glm",
+      "label": "GLM-4.1V-Thinking-FlashX",
+      "modality": "vision"
+    },
+    {
+      "key": "glm/glm-4.1v-thinking-flash",
+      "provider": "glm",
+      "label": "GLM-4.1V-Thinking-Flash",
+      "modality": "vision"
+    },
+    {
+      "key": "glm/autoglm-phone",
+      "provider": "glm",
+      "label": "AutoGLM Phone",
+      "modality": "vision"
+    },
+    {
+      "key": "glm/glm-4-voice",
+      "provider": "glm",
+      "label": "GLM-4-Voice",
+      "modality": "audio"
+    },
+    {
+      "key": "glm/charglm-4",
+      "provider": "glm",
+      "label": "CharGLM-4",
+      "modality": "roleplay"
+    },
+    {
+      "key": "glm/emohaa",
+      "provider": "glm",
+      "label": "Emohaa",
+      "modality": "roleplay"
     }
   ]
 }

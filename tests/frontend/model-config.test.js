@@ -23,6 +23,15 @@ describe("frontend/model-config", () => {
     expect(zaiKeys.has("ZAI_API_KEY")).toBe(true);
     const volcengineKeys = modelConfig.getVisibleAiFieldKeys("volcengine-plan");
     expect(volcengineKeys.has("VOLCANO_ENGINE_API_KEY")).toBe(true);
+    const glmKeys = modelConfig.getVisibleAiFieldKeys("glm");
+    expect(glmKeys.has("GLM_API_KEY")).toBe(true);
+  });
+
+  it("registers glm as a distinct provider from zai", async () => {
+    const modelConfig = await loadModelConfig();
+    expect(modelConfig.kProviderLabels.glm).toBe("GLM (BigModel)");
+    expect(modelConfig.kProviderLabels.zai).toBe("Z.AI");
+    expect(modelConfig.kProviderFeatures.glm).toEqual(["Agent Model"]);
   });
 
   it("picks featured models in defined preference order", async () => {
