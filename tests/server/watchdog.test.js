@@ -84,6 +84,36 @@ describe("server/watchdog", () => {
     vi.restoreAllMocks();
   });
 
+  it("defaults autoRepair to true when WATCHDOG_AUTO_REPAIR is unset", () => {
+    delete process.env.WATCHDOG_AUTO_REPAIR;
+    const watchdog = createWatchdog({
+      clawCmd: vi.fn(),
+      launchGatewayProcess: vi.fn(),
+      insertWatchdogEvent: vi.fn(),
+      notifier: { notify: vi.fn() },
+      readEnvFile: vi.fn(() => []),
+      writeEnvFile: vi.fn(),
+      reloadEnv: vi.fn(),
+    });
+
+    expect(watchdog.getSettings().autoRepair).toBe(true);
+  });
+
+  it("respects an explicit WATCHDOG_AUTO_REPAIR=false override", () => {
+    process.env.WATCHDOG_AUTO_REPAIR = "false";
+    const watchdog = createWatchdog({
+      clawCmd: vi.fn(),
+      launchGatewayProcess: vi.fn(),
+      insertWatchdogEvent: vi.fn(),
+      notifier: { notify: vi.fn() },
+      readEnvFile: vi.fn(() => []),
+      writeEnvFile: vi.fn(),
+      reloadEnv: vi.fn(),
+    });
+
+    expect(watchdog.getSettings().autoRepair).toBe(false);
+  });
+
   it("logs startup-grace health failures as skipped ok events", async () => {
     const { watchdog, insertWatchdogEvent } = createHarness({
       clawCmdImpl: async (command) => {

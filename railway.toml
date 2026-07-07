@@ -18,3 +18,6 @@ alphaclaw-data = "/data"
 # Variables shown in the Railway deploy UI — fill SETUP_PASSWORD before deploying.
 [variables]
 SETUP_PASSWORD = ""
+# Auto-restart the gateway on crash/unhealthy detection. Defaults to true in
+# code even if unset; listed here so it's visible/overridable per deployment.
+WATCHDOG_AUTO_REPAIR = "true"
