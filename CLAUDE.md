@@ -166,6 +166,12 @@ Railway deploys directly from this GitHub repo using the `Dockerfile` at the rep
 | `GITHUB_TOKEN` | GitHub PAT for workspace repo sync |
 | `GITHUB_WORKSPACE_REPO` | `owner/repo` for workspace sync |
 
+**Optional env vars:**
+
+| Variable | Description |
+|---|---|
+| `WATCHDOG_AUTO_REPAIR` | Auto-restart the gateway on crash/unhealthy detection. Defaults to `true` in code — set to `false` to opt out on a specific deployment. |
+
 **Note:** Railway's Trial plan can cause OOM crashes — Hobby plan (8 GB RAM) is required for stable operation.
 
 ## Adding OpenClaw Workspace Skills
