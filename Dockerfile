@@ -27,6 +27,12 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --prefer-online
 
+# xurl is also a local dependency (node_modules/.bin/xurl), but login shells
+# reset PATH via /etc/profile and drop /app/node_modules/.bin — install it
+# globally too so it resolves from any shell the agent spawns.
+RUN npm install -g @xdevplatform/xurl@1.0.3 \
+ && which xurl
+
 RUN npm install -g @anthropic-ai/claude-code@2.1.133 \
  && claude --version
 ENV CLAUDE_CONFIG_DIR=/data/.claude
