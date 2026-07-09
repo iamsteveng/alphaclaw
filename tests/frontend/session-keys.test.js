@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  getDestinationFromSession,
   getSessionChannelForIcon,
   getSessionDisplayLabel,
   getSessionKind,
+  isDestinationSessionKey,
+  kDestinationSessionFilter,
   parseChannelFromSessionKey,
 } from "../../lib/public/js/lib/session-keys.js";
 
@@ -71,12 +74,35 @@ describe("session-keys display helpers", () => {
     expect(getSessionKind("agent:main:telegram:direct:7")).toBe("direct");
     expect(getSessionKind("agent:main:slash:foo")).toBe("slash");
     expect(getSessionKind("agent:main:subagent:worker:123")).toBe("subagent");
+    expect(getSessionKind("agent:main:discord:channel:987654")).toBe("channel");
     expect(getSessionKind("agent:main:custom:thing")).toBe("other");
+  });
+
+  it("getSessionDisplayLabel renders Discord guild channel with id", () => {
+    expect(
+      getSessionDisplayLabel({
+        key: "agent:main:discord:channel:987654",
+      }),
+    ).toBe("Discord Channel 987654");
+  });
+
+  it("getSessionDisplayLabel renders Discord DM using existing direct fallback", () => {
+    expect(
+      getSessionDisplayLabel({
+        key: "agent:main:discord:direct:123456",
+      }),
+    ).toBe("Direct 123456");
   });
 
   it("parseChannelFromSessionKey detects telegram in key", () => {
     expect(parseChannelFromSessionKey("agent:main:telegram:direct:1")).toBe(
       "telegram",
+    );
+  });
+
+  it("parseChannelFromSessionKey detects discord in key", () => {
+    expect(parseChannelFromSessionKey("agent:main:discord:channel:987654")).toBe(
+      "discord",
     );
   });
 
@@ -87,5 +113,37 @@ describe("session-keys display helpers", () => {
         replyChannel: "telegram",
       }),
     ).toBe("telegram");
+  });
+
+  it("isDestinationSessionKey matches Discord guild channel keys", () => {
+    expect(isDestinationSessionKey("agent:main:discord:channel:987654")).toBe(
+      true,
+    );
+  });
+
+  it("isDestinationSessionKey still matches Discord DM keys", () => {
+    expect(isDestinationSessionKey("agent:main:discord:direct:123456")).toBe(
+      true,
+    );
+  });
+
+  it("kDestinationSessionFilter includes a Discord guild channel session row", () => {
+    expect(
+      kDestinationSessionFilter({
+        key: "agent:main:discord:channel:987654",
+        replyChannel: "discord",
+        replyTo: "987654",
+      }),
+    ).toBe(true);
+  });
+
+  it("getDestinationFromSession resolves a Discord guild channel session row", () => {
+    expect(
+      getDestinationFromSession({
+        key: "agent:main:discord:channel:987654",
+        replyChannel: "discord",
+        replyTo: "987654",
+      }),
+    ).toEqual({ channel: "discord", to: "987654", agentId: "main" });
   });
 });
