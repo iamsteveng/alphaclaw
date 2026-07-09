@@ -162,8 +162,30 @@ way it already does for Telegram. Specifically:
 
 ## When You Need Human Feedback
 
-- Whether the external cron/gateway engine's delivery path actually supports posting to a
-  bare Discord guild channel ID today (as opposed to only session-based/DM delivery). This
-  cannot be determined from this repo alone — confirm via the integration test's manual
-  trigger-and-observe step, and if it does not work, flag it back rather than attempting a
-  workaround in AlphaClaw.
+(none — see Resolved Open Question below)
+
+## Resolved Open Question (confirmed via live production test)
+
+Confirmed on the `prod-peter` Railway service (2026-07-09) that the external cron/gateway
+engine **already supports delivering to a bare Discord guild channel ID** — no additional
+out-of-repo work is required on that side. Test performed:
+
+- Created a disposable one-shot cron job directly via `openclaw cron add` over SSH
+  (`--session isolated --message "..." --announce --channel discord --to 1487367106281476239
+  --disabled --at +365d`), then triggered it manually with `openclaw cron run <id>` and
+  inspected `openclaw cron runs --id <id>`.
+- Confirmed `agent:main:discord:channel:1487367106281476239` already existed as a live
+  session on this instance with `replyChannel`/`replyTo` empty — reproducing exactly the gap
+  described above (this destination cannot be selected via the UI today, even though the
+  gateway can deliver to it).
+- Run result: `"delivered": true`, `"deliveryStatus": "delivered"`,
+  `"delivery": { "intended": { "channel": "discord", "to": "1487367106281476239", "source":
+  "explicit" }, "resolved": { "ok": true, "channel": "discord", "to":
+  "channel:1487367106281476239", "accountId": "default" }, "delivered": true }`. A real
+  message was posted to the guild channel.
+- The one-shot job auto-removed itself (`deleteAfterRun: true`) after the successful run —
+  no lingering job left on `prod-peter`.
+
+This means the implementation work is scoped entirely to the frontend/session-listing gap
+described above (`getSessionReplyTarget`, `isDestinationSessionKey`) — the delivery/dispatch
+side needs no changes.
