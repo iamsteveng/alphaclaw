@@ -1137,4 +1137,56 @@ describe("server/routes/system", () => {
       },
     ]);
   });
+
+  it("resolves replyChannel/replyTo for Discord DM and guild channel sessions on GET /api/agent/sessions", async () => {
+    const deps = createSystemDeps();
+    deps.clawCmd.mockResolvedValue({
+      ok: true,
+      stdout: JSON.stringify({
+        sessions: [
+          {
+            key: "agent:main:discord:direct:123456",
+            sessionId: "discord-dm-session",
+            updatedAt: 20,
+          },
+          {
+            key: "agent:main:discord:channel:987654",
+            sessionId: "discord-channel-session",
+            updatedAt: 19,
+          },
+        ],
+      }),
+    });
+    const app = createApp(deps);
+
+    const res = await request(app).get("/api/agent/sessions");
+
+    expect(res.status).toBe(200);
+    expect(res.body.sessions).toEqual([
+      {
+        key: "agent:main:discord:direct:123456",
+        sessionId: "discord-dm-session",
+        updatedAt: 20,
+        agentId: "main",
+        agentLabel: "Main Agent",
+        channel: "discord",
+        groupName: "",
+        topicName: "",
+        replyChannel: "discord",
+        replyTo: "123456",
+      },
+      {
+        key: "agent:main:discord:channel:987654",
+        sessionId: "discord-channel-session",
+        updatedAt: 19,
+        agentId: "main",
+        agentLabel: "Main Agent",
+        channel: "discord",
+        groupName: "",
+        topicName: "",
+        replyChannel: "discord",
+        replyTo: "987654",
+      },
+    ]);
+  });
 });
