@@ -6,10 +6,10 @@
 - The hourly cron's message (`buildIngestMessage()` in `lib/server/routes/x-list-ingest.js`) no longer embeds the full ingestion contract inline. Instead it is a short message that matches one of the new skill's `triggers` and carries only the per-run parameter (the X list ID), so the skill itself — not a re-typed inline string — defines ingestion behavior.
 - For each tweet ingested by an `x-list-ingest` run, the same two outcomes gbrain's own `idea-ingest`/`ingest` skills already guarantee for other content happen automatically:
   - **Author resolution.** The tweet's author is resolved to a `people/<handle>` brain page (created if none exists and the account clears the notability gate in `_brain-filing-rules.md`; updated with a new timeline entry if a page already exists), cross-linked bidirectionally between the tweet page and the author page (Iron Law back-linking).
-  - **Entity/ticker linking.** `$TICKER` symbols and known company names mentioned in the tweet body are linked to their existing brain pages where such pages already exist (no new company/concept pages are force-created off a single low-context tweet mention).
+  - **Entity/ticker linking.** Explicit `$TICKER` cashtag mentions in the tweet body are linked to their existing brain pages where such pages already exist (no new company/concept pages are force-created off a single low-context tweet mention). Scoped to `$TICKER` cashtags only — bare company-name matching is explicitly out of scope (confirmed by @iamsteveng in PR review: too high a false-positive risk on common words).
 - The skill composes with (invokes/follows) gbrain's existing `idea-ingest` and `ingest` skill contracts for this per-post write, rather than re-specifying a narrower, disconnected frontmatter-only contract — so future improvements to gbrain's ingest/linking behavior apply to `x-list-ingest` for free.
-- Each batch ends with a `gbrain sync` (or the appropriate stale-extraction command — see "When You Need Human Feedback" for the exact flag/subcommand to confirm) so that `pages.links_extracted_at` gets stamped on every tweet page written that run — pages are no longer permanently stuck at `NULL`.
-- The pre-existing backlog of 1,846 already-ingested `twitter/post/*` pages gets backfilled so the same linking/extraction outcomes apply retroactively, not just to new ingests going forward.
+- Each batch ends with a `gbrain sync` (or the appropriate stale-extraction command) so that `pages.links_extracted_at` gets stamped on every tweet page written that run — pages are no longer permanently stuck at `NULL`. The exact subcommand/flags are not assumed from local docs — they must be confirmed by running `gbrain sync --help` / `gbrain extract --help` directly against the live `prod-peter` Railway service during implementation (confirmed approach by @iamsteveng in PR review).
+- The pre-existing backlog of 1,846 already-ingested `twitter/post/*` pages gets backfilled via a **brain-wide** `gbrain extract --stale` (or equivalent) pass — not scoped narrowly to just `twitter/post/*` slugs — so the same linking/extraction outcomes apply retroactively, not just to new ingests going forward (confirmed by @iamsteveng in PR review: brain-wide backfill is intended, not scoped-only).
 - Observable end state, from an operator/data perspective: querying the live Postgres-backed brain after a fresh `x-list-ingest` cron run shows non-null `links_extracted_at` and at least one outbound link for each newly-ingested tweet page (barring genuine no-link, no-notable-author tweets), and the historical `twitter/post/%` backlog's NULL-`links_extracted_at` count is materially reduced from 1,846.
 
 ## Verifications
@@ -17,6 +17,14 @@
 > All behaviours below must be verified by scripts, not by AI agent judgement.
 > Never allow a graceful skip when external API credentials are present —
 > if the API rejects the request the test must fail, not pass silently.
+
+- [ ] The exact `gbrain sync`/`gbrain extract` subcommand and flags for stamping `links_extracted_at` are confirmed by running `--help` directly against the live `prod-peter` Railway service (not inferred from local docs), and the chosen command is what `SKILL.md` actually documents/uses.
+  ```bash
+  railway run --service prod-peter gbrain sync --help
+  railway run --service prod-peter gbrain extract --help
+  # Confirm the flags used in lib/setup/skills/x-list-ingest/SKILL.md match what --help reports:
+  grep -E "gbrain (sync|extract)" lib/setup/skills/x-list-ingest/SKILL.md
+  ```
 
 - [ ] `lib/setup/skills/x-list-ingest/SKILL.md` exists with valid frontmatter (`name: x-list-ingest`, non-empty `description`, non-empty `triggers` array).
   ```bash
@@ -118,39 +126,50 @@
   echo "OK — $NEW_WITH_LINKS newly-ingested tweet page(s) have links_extracted_at set and at least one outbound link"
   ```
 
-- [ ] Backfill materially reduces the existing 1,846-page NULL-`links_extracted_at` backlog (must not be a no-op skip — must actually run against the live corpus and be re-checked by SQL count).
+- [ ] Backfill is run **brain-wide** (not scoped only to `twitter/post/*`) and materially reduces both the brain-wide NULL-`links_extracted_at` backlog and the specific 1,846-page `twitter/post/*` backlog (must not be a no-op skip — must actually run against the live corpus and be re-checked by SQL count).
   ```bash
   PG_CONTAINER="${PG_CONTAINER:-openclaw-railway-template-postgres-1}"
-  BEFORE=$(docker exec "$PG_CONTAINER" psql -U postgres -d gbrain -tAc "
+
+  BEFORE_ALL=$(docker exec "$PG_CONTAINER" psql -U postgres -d gbrain -tAc "
+    SELECT count(*) FROM pages WHERE links_extracted_at IS NULL;
+  ")
+  BEFORE_TWITTER=$(docker exec "$PG_CONTAINER" psql -U postgres -d gbrain -tAc "
     SELECT count(*) FROM pages WHERE slug LIKE 'twitter/post/%' AND links_extracted_at IS NULL;
   ")
-  echo "Backlog before: $BEFORE"
+  echo "Backlog before — brain-wide: $BEFORE_ALL, twitter/post/*: $BEFORE_TWITTER"
 
-  # (run the backfill command chosen during implementation here)
+  # (run the brain-wide backfill command chosen during implementation here, e.g.
+  #  railway run --service prod-peter gbrain extract --stale)
 
-  AFTER=$(docker exec "$PG_CONTAINER" psql -U postgres -d gbrain -tAc "
+  AFTER_ALL=$(docker exec "$PG_CONTAINER" psql -U postgres -d gbrain -tAc "
+    SELECT count(*) FROM pages WHERE links_extracted_at IS NULL;
+  ")
+  AFTER_TWITTER=$(docker exec "$PG_CONTAINER" psql -U postgres -d gbrain -tAc "
     SELECT count(*) FROM pages WHERE slug LIKE 'twitter/post/%' AND links_extracted_at IS NULL;
   ")
-  echo "Backlog after: $AFTER"
-  if [ "$AFTER" -ge "$BEFORE" ]; then
-    echo "FAIL: backfill did not reduce the NULL links_extracted_at backlog ($BEFORE -> $AFTER)"; exit 1
+  echo "Backlog after — brain-wide: $AFTER_ALL, twitter/post/*: $AFTER_TWITTER"
+
+  if [ "$AFTER_ALL" -ge "$BEFORE_ALL" ]; then
+    echo "FAIL: backfill did not reduce the brain-wide NULL links_extracted_at backlog ($BEFORE_ALL -> $AFTER_ALL)"; exit 1
   fi
-  echo "OK — backlog reduced from $BEFORE to $AFTER"
+  if [ "$AFTER_TWITTER" -ge "$BEFORE_TWITTER" ]; then
+    echo "FAIL: backfill did not reduce the twitter/post/* NULL links_extracted_at backlog ($BEFORE_TWITTER -> $AFTER_TWITTER)"; exit 1
+  fi
+  echo "OK — brain-wide backlog reduced from $BEFORE_ALL to $AFTER_ALL; twitter/post/* backlog reduced from $BEFORE_TWITTER to $AFTER_TWITTER"
   ```
 
 ## Constraints
 
 - Do not create a new, narrower ingestion contract that duplicates gbrain's `idea-ingest`/`ingest` author-resolution and cross-linking logic — the skill must compose with (reference/invoke) those existing skills, per the issue's explicit decision to fix this structurally rather than patch symptoms.
-- Do not force-create a `people/<handle>` page for every tweet author regardless of signal — gate creation behind the notability heuristic already defined in `skills/_brain-filing-rules.md` ("Notability Gate" section), so low-signal/bot accounts don't pollute the graph. This must stay cheap enough for a high-volume hourly cron (up to 10 tweets/run).
+- Do not force-create a `people/<handle>` page for every tweet author regardless of signal — gate creation behind the notability heuristic already defined in `skills/_brain-filing-rules.md` ("Notability Gate" section), so low-signal/bot accounts don't pollute the graph. This must stay cheap enough for a high-volume hourly cron (up to 10 tweets/run). The generic notability gate as already written is sufficient — do not build a separate X/Twitter-specific signal (e.g. follower count, verified status, allow/deny list) for this skill (confirmed by @iamsteveng in PR review).
+- Do not implement bare company-name matching against `companies/` pages for entity linking — scope entity linking to explicit `$TICKER` cashtag mentions only (confirmed by @iamsteveng in PR review).
 - Do not change the existing `twitter/post/<tweet_id>` slug convention, the dedupe-on-existing-slug behavior, or the quoted/referenced-post inline handling already specified in the current `buildIngestMessage()` — those parts of current behavior are correct and out of scope for this fix.
 - Do not change the cron's schedule (`0 * * * *` UTC), `sessionTarget`, `wakeMode`, or the `/api/x-list-ingest/*` route contracts (`status`, `ensure`, `DELETE`) in `lib/server/routes/x-list-ingest.js` — this is a content/composition fix to what the cron *instructs the agent to do*, not to how the cron is scheduled or managed.
 - Do not modify `.omc/skills/x-list-ingest.md` or `.omc/plans/x-list-ingest*.md` as part of implementing this — per the issue, those are oh-my-claudecode's own unrelated planning artifacts from this feature's original build, not the real OpenClaw-agent-facing skill.
 - Do not remove or weaken the existing Telegram/Discord result-block summary format (`X List Ingest — <n> new · <n> skipped · <n> error(s)` etc.) that the cron's delivery relies on — whatever the new short trigger message produces must still result in the agent emitting this same summary format at the end of a run.
-- The backfill (Acceptance Criterion 6 in the issue) must run against the real, live `prod-peter` Postgres-backed brain — not a local/mocked dataset — since the 1,846-page backlog figure and the "before/after" verification above are both scoped to that live instance.
+- The backfill (Acceptance Criterion 6 in the issue) must run **brain-wide** against the real, live `prod-peter` Postgres-backed brain — not scoped only to `twitter/post/*`, and not a local/mocked dataset (confirmed by @iamsteveng in PR review).
+- The exact `gbrain sync`/`gbrain extract` command and flags must be confirmed by running `--help` directly against the live `prod-peter` Railway service before finalizing `SKILL.md` — do not guess or ship based on local doc snapshots that may be stale (confirmed by @iamsteveng in PR review).
 
 ## When You Need Human Feedback
 
-- **Exact gbrain command to stamp `links_extracted_at`.** The issue's Task Brief and Reference sections cite `gbrain sync --no-pull --no-embed` and `gbrain extract --stale` / `gbrain extract --stale --catch-up` as the commands that trigger extraction and backfill, and cite a `gbrain docs/architecture/KEY_FILES.md` for the staleness mechanics. I could not independently confirm these exact flags: the only bundled-skill documentation I could find (`skills/conventions/brain-first.md` in a local OpenClaw workspace snapshot) shows `gbrain sync --no-pull` (no `--no-embed`), and no bundled skill anywhere references a `gbrain extract` subcommand at all — it may exist as an undocumented/newer CLI command not reflected in the skill docs I had access to. **@iamsteveng** — before implementation, please run `gbrain sync --help` and `gbrain extract --help` (or equivalent) against the live `prod-peter` container to confirm the exact subcommand/flags for (a) per-run extraction and (b) the historical backfill, so the Verifications above use the real command.
-- **Backfill mechanism and blast radius.** The issue asks to "run `gbrain extract --stale --catch-up` (or equivalent) against the 1,846 already-ingested tweet pages." Depending on gbrain's actual implementation, a stale-extraction pass across the whole brain (not scoped to `twitter/post/*`) could be expensive or could pick up unrelated stale pages outside this issue's scope. **@iamsteveng** — confirm whether the backfill should be scoped specifically to `twitter/post/%` slugs (e.g. via a scripted loop calling extraction per-page) or whether a brain-wide `--stale` pass is acceptable/intended.
-- **Notability gate specifics for Twitter/X accounts.** `_brain-filing-rules.md`'s "Notability Gate" is generic ("Will you interact with them again? Are they relevant to your work?") and isn't Twitter-specific. The issue's own wording ("low-signal/bot account") implies a more concrete signal (e.g. follower count, verified status, or an allow/deny list) may be wanted for the hourly cron specifically, since an LLM applying the generic gate per-tweet, unsupervised, at up to 10 tweets/hour, may be inconsistent. **@iamsteveng** — confirm whether the generic notability gate is sufficient as-is for this skill, or whether a more concrete X-specific signal should be added.
-- **Ticker/company entity-linking scope.** The issue asks for "basic entity ($TICKER / known company) linking" per post but doesn't specify how aggressively to scan tweet bodies (e.g. only explicit `$TICKER` cashtags, or also bare company names/tickers without the `$` prefix, which risks false positives on common words). **@iamsteveng** — confirm whether entity linking should be scoped to explicit `$TICKER` cashtag mentions only, or should also attempt bare company-name matching against existing `companies/` pages.
+(none — all open questions from the initial draft were resolved by @iamsteveng in PR #51 review: (1) exact gbrain CLI flags are to be confirmed directly against prod-peter during implementation rather than pre-decided here; (2) backfill is brain-wide, not scoped to `twitter/post/*` only; (3) the generic notability gate in `_brain-filing-rules.md` is sufficient as-is; (4) entity linking is scoped to explicit `$TICKER` cashtags only, no bare company-name matching. These decisions are now reflected in Goals/Constraints/Verifications above.)
