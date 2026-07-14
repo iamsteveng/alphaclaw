@@ -128,26 +128,30 @@ EOF
 
 ---
 
-## Step 5 — Telegram summary
+## Step 5 — Send full report to delivery channel
 
-Output ONLY this format — no questions, no follow-ups:
+After writing the learning entry to GBrain (Step 4), send the **full report** to the delivery channel — the same content just written to `learning/YYYY-MM-DD`, not a condensed digest. Every plan reviewed gets a row, not just the ones that changed label.
+
+Output this format — no questions, no follow-ups:
 
 ```
 📊 EOD Loop — YYYY-MM-DD
 Plans reviewed: N
 
-🏷️ Label updates:
-  TICKER: usable-now → accumulate (reason)
-  TICKER: usable-now → extended-wait (reason)
+### Plans Reviewed
+TICKER [LONG/SHORT] — label: old → new | price: $X (entry: $E, invalidation: $I) | reason: [one sentence]
+(one line per plan audited today — all N of them, unchanged plans included)
 
-⛔ Broken plans:
-  TICKER: broken-action-required — [reason] — action written to plans/ticker
+### Calibration Observations
+1. [First observation]
+2. [Second observation]
+3. [Third observation, if applicable]
 
-✔️ Unchanged:
-  TICKER (usable-now), TICKER (accumulate)
+### Broken Plans
+TICKER: broken-action-required — [reason] — action written to plans/ticker
+(omit this section entirely if no plans are broken)
 
-📝 Analysis saved to learning/YYYY-MM-DD
+📝 Full analysis saved to learning/YYYY-MM-DD
 ```
 
-If no label changes: `All labels unchanged.`
-If no broken plans: omit the ⛔ section.
+**Message length:** if the assembled report would exceed roughly 1800 characters, split it into sequential messages labeled `(1/2)`, `(2/2)`, etc. and send them in order via the same delivery tool. Never truncate or drop plans/sections to fit — split instead.
