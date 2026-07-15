@@ -7,7 +7,7 @@
 - The existing backlog of stale, never-embedded `content_chunks` (1,946 at the time the issue was filed, larger by implementation time) is fully backfilled under the new provider.
 - Local dev (`docker-compose.yml`) gets the same embedding provider available as a service, consistent with this repo's stated goal that "the conditions in local container setup are the same as that in Railway production instance" (see `requirements/connect-postgres-to-gbrain.md`), so a contributor working on gbrain/embedding-adjacent code can reproduce the setup without needing a paid API key either.
 - `gbrain query` / `gbrain search` continue to return sensible, non-empty results against the live brain after the model/dimension switch — the migration doesn't silently degrade retrieval into a broken or empty-result state.
-- Fresh installs (new environment, disaster recovery, empty `/data` volume) do not regress into the original bug — i.e. a brand-new deployment doesn't end up defaulting to an embedding provider with no key set and silently sitting at 0% embedded, the way `prod-peter` did.
+- Connecting an embedding provider is **optional and can happen at any time**, on any deployment — not just at fresh install. A deployment with no `OLLAMA_BASE_URL`/`LLAMA_SERVER_BASE_URL` set runs with no embedding provider configured (page CRUD and keyword search still work; only vector/hybrid search is degraded until a provider is connected), and this is a normal, supported state — not an error. `lib/server/startup.js` gains the same detect-and-wire-up behavior for the embedding provider that `ensureGbrainDatabaseConfig()` already has for `DATABASE_URL`: on every boot, if `OLLAMA_BASE_URL`/`LLAMA_SERVER_BASE_URL` is set and gbrain isn't yet pinned to it, wire it in explicitly (Ollama/llama-server are not auto-detected by gbrain's own key-presence logic); if already pinned, no-op; if unset, do nothing. This closes the actual root cause of this issue — a schema sized for a provider whose key was never set, silently sitting at 0% embedded — without forcing every future deployment to run an embedding provider it doesn't need.
 
 ## Verifications
 
@@ -23,6 +23,24 @@
     && echo OK || (echo "FAIL: ollama service unreachable or model not pulled"; exit 1)
   ```
 
+- [ ] Local: `openclaw`'s compose definition does NOT depend on `ollama` health — `npm run dev` still comes up cleanly with the `ollama` service stopped/removed.
+  ```bash
+  docker compose stop ollama 2>/dev/null || true
+  docker compose up -d openclaw postgres
+  CONTAINER="${CONTAINER:-openclaw-railway-template-openclaw-1}"
+  timeout 30 bash -c "until docker exec \"$CONTAINER\" curl -sf http://localhost:3000/health >/dev/null; do sleep 1; done" \
+    && echo "OK — openclaw healthy with ollama stopped" || (echo "FAIL: openclaw failed to start without ollama running"; exit 1)
+  python3 -c "
+  import yaml
+  svc = yaml.safe_load(open('docker-compose.yml'))['services']['openclaw']
+  depends = svc.get('depends_on', {})
+  ollama_dep = depends.get('ollama') if isinstance(depends, dict) else None
+  hard = isinstance(ollama_dep, dict) and ollama_dep.get('condition') == 'service_healthy'
+  assert not hard, 'FAIL: openclaw hard-depends on ollama service_healthy'
+  print('OK — no hard depends_on ollama')
+  "
+  ```
+
 - [ ] Local: `HOME=/data gbrain providers test --model ollama:nomic-embed-text` succeeds inside the `openclaw` container (confirms the recipe + local network path both work end-to-end, not just that the HTTP port answers).
   ```bash
   CONTAINER="${CONTAINER:-openclaw-railway-template-openclaw-1}"
@@ -30,19 +48,29 @@
     && echo OK || (echo "FAIL: gbrain providers test failed against local ollama"; exit 1)
   ```
 
+> The commands below use `railway ssh`, not `railway run` — `railway run` only injects env vars into a **local** command, it does not execute inside the remote container (confirmed via `railway run --help`: "Run a **local** command using variables from the active environment"). `railway ssh -p <project> -s <service> -e <environment> "<cmd>"` is the form that actually executes on the live instance — confirmed working against `prod-peter` directly during this doc's review (e.g. `gbrain doctor --json`, `gbrain search`, `gbrain embed --stale --dry-run` were all run live).
+>
+> `RAILWAY_PROJECT_ID` below is `radiant-liberation`'s real ID (`ffbb8141-53c9-49f9-9acb-c5def26e135a`) — `railway ssh --project radiant-liberation` (by name) does not resolve; the CLI requires the UUID.
+
+```bash
+export RAILWAY_PROJECT_ID="ffbb8141-53c9-49f9-9acb-c5def26e135a"
+export RAILWAY_ENV="production"
+rssh() { railway ssh -p "$RAILWAY_PROJECT_ID" -s prod-peter -e "$RAILWAY_ENV" "$1"; }
+```
+
 - [ ] Production: a Railway service running Ollama (or llama-server) exists in the `radiant-liberation` project and is reachable from `prod-peter` over the private network.
   ```bash
-  railway service list --project radiant-liberation --json | grep -qiE '"name":\s*"(ollama|llama-server)"' \
+  railway service list -p "$RAILWAY_PROJECT_ID" -e "$RAILWAY_ENV" --json | grep -qiE '"name":\s*"(ollama|llama-server)"' \
     && echo OK || (echo "FAIL: no ollama/llama-server service found in radiant-liberation"; exit 1)
 
   # Reachability from prod-peter itself, not just "the service exists":
-  railway run --service prod-peter -- bash -c 'curl -sf "$OLLAMA_BASE_URL/api/tags" || curl -sf "${OLLAMA_BASE_URL%/v1}/tags"' \
+  rssh 'curl -sf "$OLLAMA_BASE_URL/api/tags" || curl -sf "${OLLAMA_BASE_URL%/v1}/tags"' \
     && echo OK || (echo "FAIL: prod-peter cannot reach the ollama service over the private network"; exit 1)
   ```
 
 - [ ] Production: `prod-peter`'s env has `OLLAMA_BASE_URL` (or `LLAMA_SERVER_BASE_URL`) set, and no longer needs `ZEROENTROPY_API_KEY` for gbrain to embed.
   ```bash
-  railway variables --service prod-peter --json | python3 -c "
+  railway variables list -s prod-peter -p "$RAILWAY_PROJECT_ID" -e "$RAILWAY_ENV" --json | python3 -c "
   import json, sys
   v = json.load(sys.stdin)
   assert v.get('OLLAMA_BASE_URL') or v.get('LLAMA_SERVER_BASE_URL'), 'FAIL: no OLLAMA_BASE_URL/LLAMA_SERVER_BASE_URL set'
@@ -52,49 +80,92 @@
 
 - [ ] Production: gbrain's file-plane config (`~/.gbrain/config.json` on `prod-peter`, read via `gbrain config get`) is pinned to the new provider/dimension pair — not left on the old `zeroentropyai:zembed-1`/1280 config that was never actually populated.
   ```bash
-  railway run --service prod-peter -- bash -c "HOME=/data gbrain config get embedding_model" | grep -qE '^ollama:nomic-embed-text$' \
+  rssh "HOME=/data gbrain config get embedding_model" | grep -qE '^ollama:nomic-embed-text$' \
     && echo OK || (echo "FAIL: embedding_model is not pinned to ollama:nomic-embed-text"; exit 1)
-  railway run --service prod-peter -- bash -c "HOME=/data gbrain config get embedding_dimensions" | grep -qE '^768$' \
+  rssh "HOME=/data gbrain config get embedding_dimensions" | grep -qE '^768$' \
     && echo OK || (echo "FAIL: embedding_dimensions is not 768"; exit 1)
   ```
 
-- [ ] Production: the Postgres `content_chunks.embedding` column was actually altered to the new width (not just the config file) — confirms the `docs/embedding-migrations.md` column-alter recipe was run, not skipped.
+- [ ] Production: the Postgres `content_chunks.embedding` **and** `facts.embedding` columns were both actually altered to the new width (not just the config file). Real `gbrain doctor --json` output confirms these are two *separate* vector columns — `embedding_width_consistency` covers `content_chunks` (currently `vector(1280)`), `facts_embedding_width_consistency` covers `facts.embedding` (currently `halfvec(1280)`). `docs/embedding-migrations.md`'s column-alter recipe only mentions `content_chunks` — the `facts` table needs the same treatment or this check will fail post-migration. Confirmed real schema (list format, not a `checks: {name: ...}` map) via a live `gbrain doctor --json` run: top-level `{"schema_version","status","health_score","checks":[{"name","status","message","category"}, ...],"top_issues":[...]}`, and `status` values are `"ok"`/`"warn"` (not `"pass"`/`"green"`).
   ```bash
-  railway run --service prod-peter -- bash -c "HOME=/data gbrain doctor --json" | python3 -c "
+  rssh "HOME=/data gbrain doctor --json" | python3 -c "
   import json, sys
   d = json.load(sys.stdin)
-  checks = {c.get('name') or c.get('id'): c for c in d.get('checks', [])}
-  ewc = checks.get('embedding_width_consistency')
-  assert ewc and ewc.get('status') in ('ok', 'pass', 'green'), f'FAIL: embedding_width_consistency not passing: {ewc}'
-  print('OK —', ewc)
+  checks = {c['name']: c for c in d.get('checks', [])}
+  for name in ('embedding_width_consistency', 'facts_embedding_width_consistency'):
+      c = checks.get(name)
+      assert c and c.get('status') == 'ok', f'FAIL: {name} not passing: {c}'
+      print('OK —', name, '—', c.get('message'))
   "
   ```
 
-- [ ] Production: the stale-embedding backlog is fully cleared after backfill — 0 stale chunks, not just 'reduced'.
+- [ ] Production: the `content_chunks` stale-embedding backlog is fully cleared after backfill — 0 stale chunks, not just 'reduced'. Real dry-run output format confirmed live: `[dry-run] Would embed <N> stale chunks`.
   ```bash
-  railway run --service prod-peter -- bash -c "HOME=/data gbrain embed --stale --dry-run" | grep -qE '^0 (stale|pending)|no stale' \
+  rssh "HOME=/data gbrain embed --stale --dry-run" | grep -qE '^\[dry-run\] Would embed 0 stale chunks' \
     && echo OK || (echo "FAIL: stale chunks remain after backfill — rerun gbrain embed --stale"; exit 1)
   ```
 
-- [ ] Production: `gbrain doctor` overall reports clean on the embedding-related checks (`embedding_column_registry`, `embed_staleness`, `embedding_width_consistency` — exact check names per the issue and `docs/embedding-migrations.md`).
+- [ ] Production: `gbrain doctor` overall reports clean on the embedding-related checks — real check names confirmed live: `embeddings`, `embedding_provider`, `embedding_column_registry`, `ze_embedding_health` (category `ops`/`brain`), and `embed_staleness` (category `meta`). Before this fix, live output showed: `embeddings` warn ("No embeddings yet"), `embedding_column_registry` warn ("0.0% populated"), `ze_embedding_health` warn ("ZEROENTROPY_API_KEY is not set"), `embed_staleness` warn ("2290 stale chunks"). All four must flip to `ok` (or the check must no longer apply, e.g. `ze_embedding_health` is ZeroEntropy-specific and may simply disappear once the provider changes — confirm which at implementation time).
   ```bash
-  railway run --service prod-peter -- bash -c "HOME=/data gbrain doctor --json" | python3 -c "
+  rssh "HOME=/data gbrain doctor --json" | python3 -c "
   import json, sys
   d = json.load(sys.stdin)
-  checks = {c.get('name') or c.get('id'): c for c in d.get('checks', [])}
-  bad = [k for k in ('embedding_column_registry', 'embed_staleness', 'embedding_width_consistency')
-         if k in checks and checks[k].get('status') not in ('ok', 'pass', 'green')]
-  assert not bad, f'FAIL: unhealthy checks: {bad}'
-  print('OK — all embedding checks clean')
+  checks = {c['name']: c for c in d.get('checks', [])}
+  bad = [k for k in ('embeddings', 'embedding_column_registry', 'embed_staleness')
+         if k in checks and checks[k].get('status') != 'ok']
+  assert not bad, f'FAIL: unhealthy checks: {[(k, checks[k]) for k in bad]}'
+  if 'ze_embedding_health' in checks and checks['ze_embedding_health'].get('status') != 'ok':
+      print('NOTE: ze_embedding_health still present and unhealthy — confirm this check is provider-specific and expected to clear:', checks['ze_embedding_health'])
+  print('OK — embeddings/embedding_column_registry/embed_staleness clean')
   "
   ```
 
-- [ ] Production: retrieval spot-check — a known query term with content in the brain returns non-empty results via both `gbrain search` (keyword) and `gbrain query` (hybrid/vector).
+- [ ] Production: retrieval spot-check — a known query term with content in the brain returns non-empty results via both `gbrain search` (keyword) and `gbrain query` (hybrid/vector). Real no-match phrasing confirmed live is `No results.` (distinct from `gbrain list`'s `No pages found.`). Confirmed live term: `plans/wmt` exists, so `WMT` returns real ranked results today (via keyword fallback, pre-migration) — re-run the same query post-migration and confirm `plans/wmt` still ranks and the score comes from vector similarity, not just tsvector.
   ```bash
-  railway run --service prod-peter -- bash -c "HOME=/data gbrain search 'AAPL'" | grep -qv '^No pages found' \
-    && echo "OK — search" || (echo "FAIL: gbrain search returned no results"; exit 1)
-  railway run --service prod-peter -- bash -c "HOME=/data gbrain query 'AAPL'" | grep -qv '^No pages found' \
+  rssh "HOME=/data gbrain search WMT" | grep -q 'plans/wmt' \
+    && echo "OK — search" || (echo "FAIL: gbrain search no longer surfaces plans/wmt for WMT"; exit 1)
+  rssh "HOME=/data gbrain query WMT" | grep -qv '^No results\.' \
     && echo "OK — query" || (echo "FAIL: gbrain query returned no results post-migration"; exit 1)
+  ```
+
+- [ ] Fresh install with no embedding env vars set: `gbrain doctor` does not error or block on the missing embedding provider — the brain is usable (page CRUD, keyword search) with embeddings simply unconfigured.
+  ```bash
+  node -e "
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ac-fresh-'));
+  const env = { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL || '', HOME: tmp };
+  delete env.OLLAMA_BASE_URL; delete env.LLAMA_SERVER_BASE_URL;
+  console.log('env prepared for fresh-install-no-embedding scenario at', tmp);
+  "
+  # then boot alphaclaw against a fresh /data with DATABASE_URL set but no OLLAMA_BASE_URL/LLAMA_SERVER_BASE_URL.
+  # Confirmed live against prod-peter: `gbrain doctor --json` exits 0 even with multiple `warn`-status embedding
+  # checks present (top-level {"status":"warnings", "checks":[{"name","status","message","category"},...]}) —
+  # there is no exitCode/ok boolean field; "non-fatal" means process exit code 0, not a particular JSON field.
+  HOME="$FRESH_DATA_DIR" gbrain doctor --json > /tmp/doctor.json
+  DOCTOR_EXIT=$?
+  if [ "$DOCTOR_EXIT" -ne 0 ]; then
+    echo "FAIL: gbrain doctor exited non-zero ($DOCTOR_EXIT) with no embedding provider configured"; exit 1
+  fi
+  python3 -c "
+  import json
+  d = json.load(open('/tmp/doctor.json'))
+  assert d.get('status') not in ('error', 'critical'), f\"FAIL: doctor top-level status is fatal: {d.get('status')}\"
+  print('OK — unconfigured embedding provider is non-fatal, doctor exited 0 with status:', d.get('status'))
+  "
+  ```
+
+- [ ] Connecting an embedding provider later (existing deployment, previously no `OLLAMA_BASE_URL`) gets wired up automatically on next boot — no manual `gbrain init`/`reinit-pglite` run by a human required.
+  ```bash
+  # Set OLLAMA_BASE_URL on a deployment that previously had none, restart, then:
+  HOME="$DATA_DIR" gbrain config get embedding_model | grep -qE '^ollama:' \
+    && echo OK || (echo "FAIL: embedding provider not auto-wired on restart after OLLAMA_BASE_URL was set"; exit 1)
+  ```
+
+- [ ] Idempotency: restarting again with the same `OLLAMA_BASE_URL` already pinned is a no-op (matches the existing `DATABASE_URL` "postgres config is current" log-line pattern) — does not re-trigger a dimension migration or re-embed on every boot.
+  ```bash
+  # Restart twice in a row with OLLAMA_BASE_URL unchanged; confirm no re-migration/re-embed log lines on the second boot.
+  npm run dev:restart 2>&1 | grep -qi "embedding.*current\|embedding.*no-op" \
+    && echo OK || echo "INFO: confirm log wording once implemented — must not re-run migration on unchanged env"
   ```
 
 - [ ] `npm test` passes with no new failures (in case any test fixtures reference the old embedding config/dimensions).
@@ -106,14 +177,17 @@
 
 - Do not modify gbrain's own source code (`src/core/ai/recipes/ollama.ts` / `llama-server.ts` already exist and are usable as-is per the issue) — this is infra + config only, same constraint as `requirements/connect-postgres-to-gbrain.md`.
 - Do not change the Railway deployment lifecycle or `prod-peter`'s own `railway.toml` build/deploy config — the new embedding-model service is an additional, separate Railway service, not a change to how `prod-peter` itself builds or deploys.
-- Do not wipe or re-import brain pages as part of the migration — only the `content_chunks.embedding` column is cleared and re-embedded, per the documented Postgres column-alter recipe (drop HNSW index → `UPDATE ... SET embedding = NULL` → `ALTER COLUMN TYPE` → recreate index → re-embed). Page content/metadata must be untouched.
+- Do not wipe or re-import brain pages as part of the migration — only the `content_chunks.embedding` (and, per the live-confirmed schema, `facts.embedding`) vector columns are cleared and re-embedded, per the documented Postgres column-alter recipe (drop HNSW index → `UPDATE ... SET embedding = NULL` → `ALTER COLUMN TYPE` → recreate index → re-embed) applied to both tables. Page content/metadata must be untouched.
 - Do not use ZeroEntropy, OpenAI, Voyage, or any other paid/hosted embedding API as the resulting provider — the entire point of this issue is $0 marginal cost. `Ollama` is the default choice per the issue unless implementation surfaces a concrete reason to prefer `llama-server` (e.g. wanting a specific GGUF model Ollama's catalog doesn't carry).
 - Do not expose the new Ollama/llama-server Railway service publicly — it must only be reachable over the private network from within the `radiant-liberation` project.
 - Do not break the existing `DATABASE_URL`/Postgres wiring in `lib/server/startup.js` (`ensureGbrainDatabaseConfig`) — this issue changes the embedding provider, not the database engine.
+- Do not force a default embedding provider on deployments that never set `OLLAMA_BASE_URL`/`LLAMA_SERVER_BASE_URL` — connecting one is opt-in and must remain possible at any point in a deployment's life, not just at fresh install.
+- The local `docker-compose.yml` `ollama` service must not gate `openclaw`'s startup or health check — no `depends_on: condition: service_healthy` on it, unlike `postgres`. `npm run dev` must keep working with the `ollama` service absent, unhealthy, or not yet pulled; it's an available service to opt into locally, not a required one.
 
 ## When You Need Human Feedback
 
-- **`lib/server/startup.js`'s fresh-install path doesn't pin an embedding model.** `ensureGbrainDatabaseConfig()` writes `{ engine: 'postgres', database_url: DATABASE_URL }` on first boot and then runs `gbrain apply-migrations --yes` — it never sets `embedding_model`/`embedding_dimensions`, and per gbrain's own docs, Ollama/llama-server are *not* picked up by env-key auto-detection (they have no API key to detect). That gap is arguably the root cause of this issue's origin (a fresh/updated install landed on a provider — ZeroEntropy — with an unset key, and nothing failed loudly). Should this task also update `startup.js` so a brand-new environment explicitly pins `ollama:nomic-embed-text` at 768 dims on first init, so this class of bug can't recur on the next fresh deploy? The issue's own Acceptance Criteria only covers the existing `prod-peter` brain (dimension migration + backfill), not this fresh-install code path — flagging since it seems closely related but is technically out of the stated scope. Suggested resolution: yes, extend `startup.js`'s fresh-config branch to pass an explicit embedding model/dimensions default, but confirm before implementation since it changes first-boot behavior for *every* future deployment, not just `prod-peter`.
-- **Local dev Ollama service footprint.** Adding a persistent `ollama` service to `docker-compose.yml` means `npm run dev` now needs to pull and run an embedding model (even `nomic-embed-text` is a real download + RAM footprint) for every contributor, including those not touching gbrain/embeddings at all. Should the local `ollama` service be a hard dependency of `openclaw` (matching the existing `postgres` `depends_on: condition: service_healthy` pattern), or best-effort/optional so it doesn't slow down or break `npm run dev` for unrelated work? Suggested resolution: optional — don't gate `openclaw`'s startup health on `ollama` being up locally, since local embedding correctness isn't this issue's actual target (production is).
-- **Exact Railway service name for `prod-peter` was not independently confirmed.** The Railway MCP tools available in this research session could list the `radiant-liberation` project (`list_projects`) but returned `Unauthorized` on `list_services`/`whoami`, so the live service name/current env vars on `prod-peter` could not be directly inspected — the verification commands above assume the service is literally named `prod-peter` per the issue text and matching usage in `requirements/issue-50-x-list-ingest-skill.md`. Confirm this against `railway service list --project radiant-liberation` (with working auth) before relying on the scripts above.
-- **`gbrain doctor --json` check-name/status shape was not directly observed against a Postgres-backed brain with real stale/mismatched embeddings.** The local dev instance's `gbrain doctor` schema (check names, `status` value spelling — `ok`/`pass`/`green`/etc.) was not verified end-to-end against a brain actually in the broken state this issue describes; the check names (`embedding_column_registry`, `embed_staleness`, `embedding_width_consistency`) are taken from the issue text and official `docs/embedding-migrations.md`, but the exact JSON field names/status strings should be confirmed with `HOME=/data gbrain doctor --json | jq .` against `prod-peter` directly before finalizing the verification scripts, and the scripts above adjusted if the real shape differs.
+(Resolved by @iamsteveng:
+1. Connecting an embedding provider is opt-in and must be possible at any point in a deployment's life, not forced at fresh install — see the "optional, connect at any time" Goal and the new `ensureGbrainDatabaseConfig`-style detect-and-wire-up Verifications above. `startup.js` extends the existing `DATABASE_URL` detection pattern to `OLLAMA_BASE_URL`/`LLAMA_SERVER_BASE_URL` rather than defaulting every fresh install to Ollama.
+2. The local `docker-compose.yml` `ollama` service does not gate `openclaw`'s startup or health — no hard `depends_on: condition: service_healthy`, so `npm run dev` keeps working for contributors not touching embeddings.)
+
+- **`docs/embedding-migrations.md`'s column-alter recipe doesn't cover the `facts` table.** A live `gbrain doctor --json` run against `prod-peter` (confirmed during this doc's review) shows a *second* vector column beyond `content_chunks.embedding`: `facts.embedding`, currently `halfvec(1280)`, tracked by its own `facts_embedding_width_consistency` doctor check. gbrain's official Postgres migration doc only walks through `content_chunks` — there is no documented recipe or `gbrain embed`-family command that explicitly re-embeds `facts` rows. Options: (a) apply the same drop-index/alter/re-embed recipe to `facts.embedding` by hand alongside `content_chunks`, inferring the SQL from the `content_chunks` recipe since gbrain's own docs don't cover it, or (b) check whether `gbrain embed --stale` implicitly covers `facts` rows too (the backlog count and `--help` output didn't make this clear) before assuming a second manual SQL pass is needed. This needs to be resolved by inspecting `facts` table row count / doctor's stale-count breakdown at implementation time — flagging since guessing wrong here means `facts_embedding_width_consistency` fails post-migration even though `content_chunks` looks clean.
