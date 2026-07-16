@@ -9,9 +9,16 @@ services:
     environment:
       - SETUP_PASSWORD=${SETUP_PASSWORD}
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/gbrain
+      # gbrain's OpenAI-compatible Ollama client uses OLLAMA_BASE_URL as-is
+      # (no auto-appended /v1) — it must include the /v1 suffix or every
+      # embed call 404s.
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
     depends_on:
       postgres:
         condition: service_healthy
+      # No health-gate on ollama here — it's an opt-in embedding provider,
+      # not a required dependency. `npm run dev` must keep working with it
+      # stopped, removed, or still pulling its model.
     volumes:
       - openclaw-data:/data
 
@@ -30,6 +37,20 @@ services:
       timeout: 5s
       retries: 10
 
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        sleep 3
+        ollama pull nomic-embed-text
+        wait
+
 volumes:
   openclaw-data:
   postgres-data:
+  ollama-data:
