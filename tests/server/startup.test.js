@@ -2,6 +2,7 @@ const { runOnboardedBootSequence, ensureGbrainPersistentDbPath } = require("../.
 const { kRootDir } = require("../../lib/server/constants");
 const fs = require("fs");
 const path = require("path");
+const childProcess = require("child_process");
 
 describe("server/startup", () => {
   it("syncs gateway proxy config with the resolved setup URL before startup", () => {
@@ -215,6 +216,123 @@ describe("ensureGbrainPersistentDbPath", () => {
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining("migration failed"),
       "disk error",
+    );
+  });
+});
+
+describe("ensureGbrainEmbeddingConfig", () => {
+  const configPath = path.join(kRootDir, ".gbrain", "config.json");
+  const modulePath = require.resolve("../../lib/server/startup");
+  const originalExecSync = childProcess.execSync;
+  const originalOllamaBaseUrl = process.env.OLLAMA_BASE_URL;
+  const originalLlamaServerBaseUrl = process.env.LLAMA_SERVER_BASE_URL;
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+
+  let existsSyncSpy, readFileSyncSpy, consoleLogSpy, consoleErrorSpy, execSyncMock, loadedEnsureGbrainEmbeddingConfig;
+
+  const loadModule = () => {
+    delete require.cache[modulePath];
+    return require(modulePath).ensureGbrainEmbeddingConfig;
+  };
+
+  beforeEach(() => {
+    existsSyncSpy = vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    readFileSyncSpy = vi.spyOn(fs, "readFileSync");
+    consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    execSyncMock = vi.fn(() => "");
+    childProcess.execSync = execSyncMock;
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.LLAMA_SERVER_BASE_URL;
+    delete process.env.DATABASE_URL;
+    loadedEnsureGbrainEmbeddingConfig = loadModule();
+  });
+
+  afterEach(() => {
+    childProcess.execSync = originalExecSync;
+    if (originalOllamaBaseUrl === undefined) delete process.env.OLLAMA_BASE_URL;
+    else process.env.OLLAMA_BASE_URL = originalOllamaBaseUrl;
+    if (originalLlamaServerBaseUrl === undefined) delete process.env.LLAMA_SERVER_BASE_URL;
+    else process.env.LLAMA_SERVER_BASE_URL = originalLlamaServerBaseUrl;
+    if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = originalDatabaseUrl;
+    delete require.cache[modulePath];
+  });
+
+  it("no-op when neither OLLAMA_BASE_URL nor LLAMA_SERVER_BASE_URL is set", () => {
+    loadedEnsureGbrainEmbeddingConfig();
+
+    expect(execSyncMock).not.toHaveBeenCalled();
+    expect(existsSyncSpy).not.toHaveBeenCalled();
+  });
+
+  it("LLAMA_SERVER_BASE_URL alone — points at manual setup, does not auto-wire", () => {
+    process.env.LLAMA_SERVER_BASE_URL = "http://llama-server:8080";
+
+    loadedEnsureGbrainEmbeddingConfig();
+
+    expect(execSyncMock).not.toHaveBeenCalled();
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining("run `gbrain init --embedding-model llama-server:"),
+    );
+  });
+
+  it("OLLAMA_BASE_URL set, config.json absent, DATABASE_URL set — wires postgres engine", () => {
+    process.env.OLLAMA_BASE_URL = "http://ollama:11434";
+    process.env.DATABASE_URL = "postgresql://postgres:postgres@postgres:5432/gbrain";
+
+    loadedEnsureGbrainEmbeddingConfig();
+
+    expect(execSyncMock).toHaveBeenCalledTimes(1);
+    const [cmd] = execSyncMock.mock.calls[0];
+    expect(cmd).toContain("gbrain init --supabase --non-interactive");
+    expect(cmd).toContain("--embedding-model ollama:nomic-embed-text");
+    expect(cmd).toContain("--embedding-dimensions 768");
+  });
+
+  it("OLLAMA_BASE_URL set, config.json absent, no DATABASE_URL — wires pglite engine", () => {
+    process.env.OLLAMA_BASE_URL = "http://ollama:11434";
+
+    loadedEnsureGbrainEmbeddingConfig();
+
+    expect(execSyncMock).toHaveBeenCalledTimes(1);
+    const [cmd] = execSyncMock.mock.calls[0];
+    expect(cmd).toContain("gbrain init --pglite --non-interactive");
+  });
+
+  it("OLLAMA_BASE_URL set, config already pinned to ollama:nomic-embed-text — no-op", () => {
+    process.env.OLLAMA_BASE_URL = "http://ollama:11434";
+    existsSyncSpy.mockImplementation((p) => p === configPath);
+    readFileSyncSpy.mockReturnValue(JSON.stringify({ engine: "postgres", embedding_model: "ollama:nomic-embed-text" }));
+
+    loadedEnsureGbrainEmbeddingConfig();
+
+    expect(execSyncMock).not.toHaveBeenCalled();
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining("embedding config is current"),
+    );
+  });
+
+  it("OLLAMA_BASE_URL set, config pinned to a different provider — re-wires using existing engine", () => {
+    process.env.OLLAMA_BASE_URL = "http://ollama:11434";
+    existsSyncSpy.mockImplementation((p) => p === configPath);
+    readFileSyncSpy.mockReturnValue(JSON.stringify({ engine: "pglite", embedding_model: "zeroentropyai:zembed-1" }));
+
+    loadedEnsureGbrainEmbeddingConfig();
+
+    expect(execSyncMock).toHaveBeenCalledTimes(1);
+    const [cmd] = execSyncMock.mock.calls[0];
+    expect(cmd).toContain("gbrain init --pglite --non-interactive");
+  });
+
+  it("non-fatal — execSync failure is caught and logged, does not throw", () => {
+    process.env.OLLAMA_BASE_URL = "http://ollama:11434";
+    execSyncMock.mockImplementation(() => { throw new Error("gbrain init failed"); });
+
+    expect(() => loadedEnsureGbrainEmbeddingConfig()).not.toThrow();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("embedding provider wire-up failed"),
+      "gbrain init failed",
     );
   });
 });

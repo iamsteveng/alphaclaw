@@ -7,7 +7,8 @@
 - The existing backlog of stale, never-embedded `content_chunks` (1,946 at the time the issue was filed, larger by implementation time) is fully backfilled under the new provider.
 - Local dev (`docker-compose.yml`) gets the same embedding provider available as a service, consistent with this repo's stated goal that "the conditions in local container setup are the same as that in Railway production instance" (see `requirements/connect-postgres-to-gbrain.md`), so a contributor working on gbrain/embedding-adjacent code can reproduce the setup without needing a paid API key either.
 - `gbrain query` / `gbrain search` continue to return sensible, non-empty results against the live brain after the model/dimension switch — the migration doesn't silently degrade retrieval into a broken or empty-result state.
-- Connecting an embedding provider is **optional and can happen at any time**, on any deployment — not just at fresh install. A deployment with no `OLLAMA_BASE_URL`/`LLAMA_SERVER_BASE_URL` set runs with no embedding provider configured (page CRUD and keyword search still work; only vector/hybrid search is degraded until a provider is connected), and this is a normal, supported state — not an error. `lib/server/startup.js` gains the same detect-and-wire-up behavior for the embedding provider that `ensureGbrainDatabaseConfig()` already has for `DATABASE_URL`: on every boot, if `OLLAMA_BASE_URL`/`LLAMA_SERVER_BASE_URL` is set and gbrain isn't yet pinned to it, wire it in explicitly (Ollama/llama-server are not auto-detected by gbrain's own key-presence logic); if already pinned, no-op; if unset, do nothing. This closes the actual root cause of this issue — a schema sized for a provider whose key was never set, silently sitting at 0% embedded — without forcing every future deployment to run an embedding provider it doesn't need.
+- Connecting an embedding provider is **optional and can happen at any time**, on any deployment — not just at fresh install. A deployment with no `OLLAMA_BASE_URL`/`LLAMA_SERVER_BASE_URL` set runs with no embedding provider configured (page CRUD and keyword search still work; only vector/hybrid search is degraded until a provider is connected), and this is a normal, supported state — not an error. `lib/server/startup.js` gains the same detect-and-wire-up behavior for the embedding provider that `ensureGbrainDatabaseConfig()` already has for `DATABASE_URL`: on every boot, if `OLLAMA_BASE_URL`/`LLAMA_SERVER_BASE_URL` is set and gbrain isn't yet pinned to it, wire it in explicitly (Ollama/llama-server are not auto-detected by gbrain's own key-presence logic); if already pinned, no-op; if unset, do nothing. This closes the actual root cause of this issue — a schema sized for a provider whose key was never set, silently sitting at 0% embedded — without forcing every future deployment to run an embedding provider it doesn't need. Implemented as `ensureGbrainEmbeddingConfig()` in `lib/server/startup.js`, live-verified end-to-end in `docker-compose` (see Local Verifications below).
+- **`OLLAMA_BASE_URL`/`LLAMA_SERVER_BASE_URL` must include the `/v1` suffix** (e.g. `http://ollama:11434/v1`, not `http://ollama:11434`) — confirmed by reading gbrain's `ollama`/`llama-server` recipes (`base_url_default: 'http://localhost:11434/v1'` / `'http://localhost:8080/v1'`) and by live-testing both forms in `docker-compose`: without `/v1` every embed call 404s (`recipe.base_url_default` is only used when the env var is absent — when present, gbrain's OpenAI-compatible client uses it *as-is*, it does not append `/v1` itself). `docker-compose.yml`'s `ollama` service definition sets this correctly; the same suffix is required on `prod-peter`'s env var in production.
 
 ## Verifications
 
@@ -41,11 +42,20 @@
   "
   ```
 
-- [ ] Local: `HOME=/data gbrain providers test --model ollama:nomic-embed-text` succeeds inside the `openclaw` container (confirms the recipe + local network path both work end-to-end, not just that the HTTP port answers).
+- [ ] Local: a real page imports, embeds via Ollama, and is retrievable — end-to-end proof the recipe + private network path work, not just that the HTTP port answers. **Do not use `gbrain providers test` for this** — live-tested and confirmed it always fails here even when Ollama embeddings work correctly: `providers test`'s own `configureFromEnv()` (`src/commands/providers.ts`) builds its gateway config from `config?.provider_base_urls` only, unlike the real embed path used by `import`/`embed`/`search`/`sync` (`src/cli.ts`'s main dispatch), which calls `buildGatewayConfig()` and correctly folds `OLLAMA_BASE_URL` in. Since nothing in this flow ever persists `provider_base_urls` to `~/.gbrain/config.json`, `providers test` always falls back to `recipe.base_url_default` (`http://localhost:11434/v1`) and fails to connect — a gbrain quirk isolated to that one subcommand, out of scope to fix (`src/commands/*` is gbrain's own source, not ours to modify).
   ```bash
   CONTAINER="${CONTAINER:-openclaw-railway-template-openclaw-1}"
-  docker exec "$CONTAINER" bash -c "HOME=/data gbrain providers test --model ollama:nomic-embed-text" \
-    && echo OK || (echo "FAIL: gbrain providers test failed against local ollama"; exit 1)
+  docker exec "$CONTAINER" bash -c "
+    set -e
+    HOME=/data
+    export HOME
+    rm -rf /tmp/embed-check && mkdir -p /tmp/embed-check
+    echo '# Embed Check
+  Verifies Ollama embeddings work end-to-end via the real gbrain import/embed/search pipeline.' > /tmp/embed-check/probe.md
+    gbrain import /tmp/embed-check --no-embed
+    gbrain embed --stale
+    gbrain search 'Embed Check' | grep -q probe
+  " && echo OK || (echo "FAIL: Ollama embed-and-search round trip failed"; exit 1)
   ```
 
 > The commands below use `railway ssh`, not `railway run` — `railway run` only injects env vars into a **local** command, it does not execute inside the remote container (confirmed via `railway run --help`: "Run a **local** command using variables from the active environment"). `railway ssh -p <project> -s <service> -e <environment> "<cmd>"` is the form that actually executes on the live instance — confirmed working against `prod-peter` directly during this doc's review (e.g. `gbrain doctor --json`, `gbrain search`, `gbrain embed --stale --dry-run` were all run live).
