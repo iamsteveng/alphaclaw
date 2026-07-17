@@ -377,3 +377,13 @@ The OAuth PKCE flow uses:
 - Scope: `org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload`
 - Client ID: `9d1c250a-e61b-44d9-88ed-5944d1962f5e`
 - The `code=true` query param is required in the authorize URL (matches what the CLI sends)
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues (`iamsteveng/alphaclaw`), via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context — root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
