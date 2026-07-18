@@ -101,7 +101,7 @@ npm run dev:shell    # bash into the running container
 
 **Syncing model API key and primary model from the Railway instance:**
 ```bash
-RAILWAY_URL="https://openclaw-railway-template-production-a7f6.up.railway.app"
+RAILWAY_URL="https://alphaclaw-production-1192.up.railway.app"   # prod = Railway service prod-peter
 
 # 1. Login to Railway alphaclaw to pull keys
 curl -s -c /tmp/railway-cookies.txt -X POST "$RAILWAY_URL/api/auth/login" \
@@ -156,7 +156,21 @@ Railway deploys directly from this GitHub repo using the `Dockerfile` at the rep
 2. Commit and push to `main`
 3. Railway auto-redeploys on push (builds the Docker image, including `npm run build:ui`)
 
-**Note:** Railway must be connected to `iamsteveng/alpha-claw` (not the old `openclaw-railway-template` repo). See `railway.toml` at the repo root for build configuration.
+**Note:** Prod is the Railway service **`prod-peter`** (project `radiant-liberation`, alongside `ollama` + `Postgres`), connected to `iamsteveng/alphaclaw` and served at `https://alphaclaw-production-1192.up.railway.app`. The `main` branch is protected — push a branch and open a PR; the squash-merge to `main` is what triggers the auto-deploy. See `railway.toml` at the repo root for build configuration.
+
+**Direct prod access (no dashboard):**
+```bash
+# Prod SETUP_PASSWORD
+railway variables --service prod-peter --json | python3 -c "import json,sys; print(json.load(sys.stdin)['SETUP_PASSWORD'])"
+
+# Run a command inside the prod container (gbrain, openclaw, etc.)
+railway ssh --service prod-peter -- gbrain list
+railway ssh --service prod-peter -- gbrain put basing-watch/mu   # reads stdin
+
+# Fire a trading cron immediately (returns a runId; poll runs for the result)
+curl -s -b /tmp/ac.txt -X POST "$RAILWAY_URL/api/trading-crons/run/trading-basing-watch"
+```
+Prod runs `openai/gpt-5.4` and delivers cron output to **Discord** (not Telegram). Agent turns inside the container need `HOME=/data`; the prod agent id is `main`. Note the **local dev container** (below) uses agent id `claude` and Telegram — don't cross the two up.
 
 **Required env vars on Railway:**
 
@@ -314,7 +328,7 @@ Replace `$RAILWAY_URL` and `$SETUP_PASSWORD` with your instance values (see CLAU
 
 **Step 1 — Authenticate**
 ```bash
-RAILWAY_URL="https://openclaw-railway-template-production-a7f6.up.railway.app"
+RAILWAY_URL="https://alphaclaw-production-1192.up.railway.app"   # prod = Railway service prod-peter
 SETUP_PASSWORD="<your password>"
 curl -s -c /tmp/ac.txt -X POST "$RAILWAY_URL/api/auth/login" \
   -H "Content-Type: application/json" \
