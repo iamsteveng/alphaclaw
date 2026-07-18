@@ -1,0 +1,247 @@
+{
+  "providers": [
+  {
+    "id": "anthropic",
+    "envVar": "ANTHROPIC_API_KEY",
+    "label": "Anthropic API Key",
+    "group": "ai",
+    "hint": "From console.anthropic.com",
+    "features": ["Models"],
+    "authMethods": ["api-key", "oauth"]
+  },
+  {
+    "id": "openai",
+    "envVar": "OPENAI_API_KEY",
+    "label": "OpenAI API Key",
+    "group": "ai",
+    "hint": "From platform.openai.com",
+    "features": ["Models", "Embeddings", "TTS", "STT"],
+    "authMethods": ["api-key", "oauth"],
+    "onboardingVariants": ["openai-codex"]
+  },
+  {
+    "id": "google",
+    "envVar": "GEMINI_API_KEY",
+    "label": "Gemini API Key",
+    "group": "ai",
+    "hint": "From aistudio.google.com",
+    "features": ["Models", "Embeddings", "Image", "STT"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "opencode",
+    "envVar": "OPENCODE_API_KEY",
+    "label": "OpenCode API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "openrouter",
+    "envVar": "OPENROUTER_API_KEY",
+    "label": "OpenRouter API Key",
+    "group": "ai",
+    "hint": "From openrouter.ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "zai",
+    "envVar": "ZAI_API_KEY",
+    "label": "Z.AI API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "vercel-ai-gateway",
+    "envVar": "AI_GATEWAY_API_KEY",
+    "label": "AI Gateway API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "kilocode",
+    "envVar": "KILOCODE_API_KEY",
+    "label": "KiloCode API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "xai",
+    "envVar": "XAI_API_KEY",
+    "label": "xAI API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "mistral",
+    "envVar": "MISTRAL_API_KEY",
+    "label": "Mistral API Key",
+    "group": "ai",
+    "hint": "From console.mistral.ai",
+    "features": ["Models", "Embeddings", "STT"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "cerebras",
+    "envVar": "CEREBRAS_API_KEY",
+    "label": "Cerebras API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "moonshot",
+    "envVar": "MOONSHOT_API_KEY",
+    "label": "Moonshot API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "kimi-coding",
+    "envVar": "KIMI_API_KEY",
+    "label": "Kimi API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "volcengine",
+    "envVar": "VOLCANO_ENGINE_API_KEY",
+    "label": "Volcano Engine API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"],
+    "onboardingVariants": ["volcengine-plan"]
+  },
+  {
+    "id": "byteplus",
+    "envVar": "BYTEPLUS_API_KEY",
+    "label": "BytePlus API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"],
+    "onboardingVariants": ["byteplus-plan"]
+  },
+  {
+    "id": "synthetic",
+    "envVar": "SYNTHETIC_API_KEY",
+    "label": "Synthetic API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "minimax",
+    "envVar": "MINIMAX_API_KEY",
+    "label": "MiniMax API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "voyage",
+    "envVar": "VOYAGE_API_KEY",
+    "label": "Voyage API Key",
+    "group": "ai",
+    "hint": "From dash.voyageai.com",
+    "features": ["Embeddings"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "groq",
+    "envVar": "GROQ_API_KEY",
+    "label": "Groq API Key",
+    "group": "ai",
+    "hint": "From console.groq.com",
+    "features": ["Models", "STT"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "deepseek",
+    "envVar": "DEEPSEEK_API_KEY",
+    "label": "DeepSeek API Key",
+    "group": "ai",
+    "hint": "From platform.deepseek.com",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  },
+  {
+    "id": "glm",
+    "envVar": "GLM_API_KEY",
+    "label": "GLM API Key",
+    "group": "ai",
+    "hint": "From open.bigmodel.cn",
+    "features": ["Models"],
+    "authMethods": ["api-key"],
+    "gatewayProvider": {
+      "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+      "apiKey": "${GLM_API_KEY}",
+      "api": "openai-completions",
+      "models": [
+        { "id": "glm-5.2", "name": "GLM-5.2" },
+        { "id": "glm-5.1", "name": "GLM-5.1" },
+        { "id": "glm-5-turbo", "name": "GLM-5-Turbo" },
+        { "id": "glm-5", "name": "GLM-5" },
+        { "id": "glm-4.7", "name": "GLM-4.7" },
+        { "id": "glm-4.7-flash", "name": "GLM-4.7-Flash" },
+        { "id": "glm-4.7-flashx", "name": "GLM-4.7-FlashX" },
+        { "id": "glm-4.6", "name": "GLM-4.6" },
+        { "id": "glm-4.5-air", "name": "GLM-4.5-Air" },
+        { "id": "glm-4.5-airx", "name": "GLM-4.5-AirX" },
+        { "id": "glm-4.5-flash", "name": "GLM-4.5-Flash" },
+        { "id": "glm-4-flash-250414", "name": "GLM-4-Flash (250414)" },
+        { "id": "glm-4-flashx-250414", "name": "GLM-4-FlashX (250414)" },
+        { "id": "glm-5v-turbo", "name": "GLM-5V-Turbo", "input": ["text", "image"] },
+        { "id": "glm-4.6v", "name": "GLM-4.6V", "input": ["text", "image"] },
+        { "id": "glm-4.6v-flash", "name": "GLM-4.6V-Flash", "input": ["text", "image"] },
+        { "id": "glm-4.6v-flashx", "name": "GLM-4.6V-FlashX", "input": ["text", "image"] },
+        { "id": "glm-4v-flash", "name": "GLM-4V-Flash", "input": ["text", "image"] },
+        { "id": "glm-4.1v-thinking-flashx", "name": "GLM-4.1V-Thinking-FlashX", "input": ["text", "image"] },
+        { "id": "glm-4.1v-thinking-flash", "name": "GLM-4.1V-Thinking-Flash", "input": ["text", "image"] },
+        { "id": "autoglm-phone", "name": "AutoGLM Phone", "input": ["text", "image"] },
+        { "id": "glm-4-voice", "name": "GLM-4-Voice" },
+        { "id": "charglm-4", "name": "CharGLM-4" },
+        { "id": "emohaa", "name": "Emohaa" }
+      ]
+    }
+  },
+  {
+    "id": "deepgram",
+    "envVar": "DEEPGRAM_API_KEY",
+    "label": "Deepgram API Key",
+    "group": "ai",
+    "hint": "From console.deepgram.com",
+    "features": ["STT"],
+    "authMethods": ["api-key"],
+    "onboarding": false
+  },
+  {
+    "id": "vllm",
+    "envVar": "VLLM_API_KEY",
+    "label": "vLLM API Key",
+    "group": "ai",
+    "features": ["Models"],
+    "authMethods": ["api-key"]
+  }
+  ],
+  "unmanagedProviders": [
+    "amazon-bedrock",
+    "anthropic-vertex",
+    "azure-openai-responses",
+    "fireworks",
+    "github-copilot",
+    "google-antigravity",
+    "google-gemini-cli",
+    "google-vertex",
+    "huggingface",
+    "minimax-cn",
+    "ollama",
+    "opencode-go"
+  ]
+}

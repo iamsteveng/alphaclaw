@@ -260,6 +260,75 @@ describe("server/auth-profiles", () => {
     expect(config.models?.providers?.glm).toBeUndefined();
   });
 
+  // Regression: GLM_API_KEY injected as a platform env var (process.env, e.g.
+  // Railway) with NO glm credential in the store. Boot writes the glm block
+  // (boot checker reads process.env); an unrelated credential save/remove must
+  // NOT recompute the block as absent and silently drop glm.
+  describe("gateway blocks driven by process.env (no store credential)", () => {
+    const originalGlm = process.env.GLM_API_KEY;
+
+    afterEach(() => {
+      if (originalGlm === undefined) delete process.env.GLM_API_KEY;
+      else process.env.GLM_API_KEY = originalGlm;
+    });
+
+    it("preserves the glm block on an unrelated credential SAVE when GLM_API_KEY is in process.env", () => {
+      process.env.GLM_API_KEY = "glm-platform-key";
+
+      ap.upsertProfile("anthropic:default", {
+        type: "api_key",
+        provider: "anthropic",
+        key: "sk-ant-unrelated",
+      });
+
+      const config = readJson("openclaw.json");
+      expect(config.models.providers.glm.baseUrl).toBe(
+        "https://open.bigmodel.cn/api/paas/v4",
+      );
+      expect(config.models.providers.glm.apiKey).toBe("${GLM_API_KEY}");
+    });
+
+    it("preserves the glm block on an unrelated credential REMOVE when GLM_API_KEY is in process.env", () => {
+      process.env.GLM_API_KEY = "glm-platform-key";
+      ap.upsertProfile("anthropic:default", {
+        type: "api_key",
+        provider: "anthropic",
+        key: "sk-ant-unrelated",
+      });
+      expect(readJson("openclaw.json").models.providers.glm).toBeDefined();
+
+      ap.removeProfile("anthropic:default");
+
+      const config = readJson("openclaw.json");
+      expect(config.models.providers.glm.baseUrl).toBe(
+        "https://open.bigmodel.cn/api/paas/v4",
+      );
+    });
+
+    it("removes the glm block when neither the store nor process.env has GLM_API_KEY", () => {
+      delete process.env.GLM_API_KEY;
+      // seed a glm block via a store credential, then clear the credential AND
+      // ensure process.env is empty → block must be removed.
+      process.env.GLM_API_KEY = "seed";
+      ap.upsertProfile("anthropic:default", {
+        type: "api_key",
+        provider: "anthropic",
+        key: "sk-ant-unrelated",
+      });
+      expect(readJson("openclaw.json").models.providers.glm).toBeDefined();
+
+      delete process.env.GLM_API_KEY;
+      ap.upsertProfile("anthropic:default", {
+        type: "api_key",
+        provider: "anthropic",
+        key: "sk-ant-still-unrelated",
+      });
+
+      const config = readJson("openclaw.json");
+      expect(config.models?.providers?.glm).toBeUndefined();
+    });
+  });
+
   it("setModelConfig writes primary and configuredModels", () => {
     ap.setModelConfig({
       primary: "openai/gpt-5.1-codex",
