@@ -770,8 +770,43 @@ describe("server/routes/system", () => {
       expect(res.body.stdout).toContain("plans/aapl");
       expect(deps.clawCmd).toHaveBeenCalledWith(
         "agent --agent main --message 'list all pages in gbrain'",
-        { quiet: true },
+        { quiet: true, timeoutMs: 300000 },
       );
+    });
+
+    it("returns a timeout error when the agent turn exceeds the time limit", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd.mockResolvedValueOnce({
+        ok: false,
+        stdout: "",
+        stderr: "[state-migrations] Legacy state migration warnings: ...",
+        timedOut: true,
+      });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "do something slow",
+      });
+
+      expect(res.status).toBe(502);
+      expect(res.body).toEqual({ ok: false, error: "Agent turn timed out" });
+    });
+
+    it("surfaces stderr when the agent command fails without timing out", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd.mockResolvedValueOnce({
+        ok: false,
+        stdout: "",
+        stderr: "GatewayCredentialsRequiredError: gateway agent requires credentials",
+      });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "hello",
+      });
+
+      expect(res.status).toBe(502);
+      expect(res.body.error).toContain("GatewayCredentialsRequiredError");
     });
 
     it("returns all seeded gbrain page slugs from agent response", async () => {
@@ -882,7 +917,7 @@ describe("server/routes/system", () => {
 
       expect(deps.clawCmd).toHaveBeenCalledWith(
         "agent --agent main --message 'show me today'\\''s plans'",
-        { quiet: true },
+        { quiet: true, timeoutMs: 300000 },
       );
     });
 
@@ -917,7 +952,7 @@ describe("server/routes/system", () => {
       expect(deps.clawCmd).toHaveBeenNthCalledWith(
         2,
         "agent --agent main --message 'list gbrain pages' --deliver --reply-channel 'telegram' --reply-to '1050'",
-        { quiet: true },
+        { quiet: true, timeoutMs: 300000 },
       );
     });
 
@@ -947,7 +982,7 @@ describe("server/routes/system", () => {
       expect(deps.clawCmd).toHaveBeenNthCalledWith(
         2,
         "agent --agent main --message 'list gbrain pages' --session-id 'main-session-id'",
-        { quiet: true },
+        { quiet: true, timeoutMs: 300000 },
       );
     });
 
