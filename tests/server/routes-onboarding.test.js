@@ -1678,3 +1678,49 @@ describe("server/routes/onboarding — env-var github path", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("syncApiKeyAuthProfilesFromEnvVars (registry-derived, direct)", () => {
+  const {
+    syncApiKeyAuthProfilesFromEnvVars,
+  } = require("../../lib/server/onboarding/index");
+  const { apiKeyEnvVarByProvider } = require("../../lib/server/model-providers");
+
+  // Mirror the real accessor so provider->envVar resolution is not a hardcoded
+  // subset — this is exactly what the production authProfiles injects.
+  const makeAuthProfiles = () => {
+    const map = apiKeyEnvVarByProvider();
+    return {
+      getEnvVarForApiKeyProvider: vi.fn((provider) => map[provider] || ""),
+      upsertApiKeyProfileForEnvVar: vi.fn(),
+    };
+  };
+
+  it("seeds api-key profiles for glm and deepseek (regression: pre-registry list omitted them)", () => {
+    const authProfiles = makeAuthProfiles();
+    syncApiKeyAuthProfilesFromEnvVars(authProfiles, [
+      { key: "GLM_API_KEY", value: "glm-secret" },
+      { key: "DEEPSEEK_API_KEY", value: "deepseek-secret" },
+    ]);
+
+    expect(authProfiles.upsertApiKeyProfileForEnvVar).toHaveBeenCalledWith(
+      "glm",
+      "glm-secret",
+    );
+    expect(authProfiles.upsertApiKeyProfileForEnvVar).toHaveBeenCalledWith(
+      "deepseek",
+      "deepseek-secret",
+    );
+  });
+
+  it("does not seed a profile for a provider whose env var is absent/empty", () => {
+    const authProfiles = makeAuthProfiles();
+    syncApiKeyAuthProfilesFromEnvVars(authProfiles, [
+      { key: "GLM_API_KEY", value: "" },
+    ]);
+
+    const seededProviders = authProfiles.upsertApiKeyProfileForEnvVar.mock.calls.map(
+      ([provider]) => provider,
+    );
+    expect(seededProviders).not.toContain("glm");
+  });
+});

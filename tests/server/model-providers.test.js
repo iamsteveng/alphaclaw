@@ -1,4 +1,5 @@
-const registry = require("../../lib/shared/model-providers.json");
+const registryFile = require("../../lib/shared/model-providers.json");
+const registry = registryFile.providers;
 const {
   listProviders,
   getProvider,
@@ -7,11 +8,38 @@ const {
   providerKnownVars,
   secretDetectorEntries,
   providersWithGatewayConfig,
+  unmanagedProviderIds,
+  variantAliasMap,
 } = require("../../lib/server/model-providers");
 
 describe("provider registry schema", () => {
+  it("is an object with providers[] and unmanagedProviders[] arrays", () => {
+    expect(Array.isArray(registryFile.providers)).toBe(true);
+    expect(Array.isArray(registryFile.unmanagedProviders)).toBe(true);
+  });
+
   it("has the 23 seeded providers", () => {
     expect(listProviders()).toHaveLength(23);
+  });
+
+  it("unmanagedProviders are unique and do not overlap registry ids", () => {
+    const unmanaged = registryFile.unmanagedProviders;
+    expect(new Set(unmanaged).size).toBe(unmanaged.length);
+    const registryIds = new Set(registry.map((e) => e.id));
+    for (const id of unmanaged) {
+      expect(typeof id).toBe("string");
+      expect(id).toBeTruthy();
+      expect(registryIds.has(id)).toBe(false);
+    }
+  });
+
+  it("unmanagedProviderIds() returns the declared unmanaged ids as a Set", () => {
+    const ids = unmanagedProviderIds();
+    expect(ids).toBeInstanceOf(Set);
+    expect(ids.has("amazon-bedrock")).toBe(true);
+    expect(ids.has("ollama")).toBe(true);
+    expect(ids.has("glm")).toBe(false); // glm is managed, not unmanaged
+    expect(ids.size).toBe(registryFile.unmanagedProviders.length);
   });
 
   it("every entry carries id/envVar/label/group/features/authMethods", () => {
@@ -87,6 +115,14 @@ describe("accessor derivations reproduce the legacy hardcoded lists", () => {
     expect(ids.size).toBe(25);
   });
 
+  it("variantAliasMap inverts onboardingVariants to exactly the three shipped pairs", () => {
+    expect(variantAliasMap()).toEqual({
+      "openai-codex": "openai",
+      "volcengine-plan": "volcengine",
+      "byteplus-plan": "byteplus",
+    });
+  });
+
   it("providerKnownVars reproduces the GLM env-var UI entry exactly", () => {
     const glm = providerKnownVars().find((v) => v.key === "GLM_API_KEY");
     expect(glm).toEqual({
@@ -119,6 +155,24 @@ describe("adding one registry entry surfaces everywhere (table-driven)", () => {
       authMethods: ["api-key"],
     },
   ];
+
+  it("a synthetic entry's onboardingVariants surface as inverse alias pairs", () => {
+    const withVariant = [
+      ...registry,
+      {
+        id: "fictional",
+        envVar: "FICTIONAL_API_KEY",
+        label: "Fictional API Key",
+        group: "ai",
+        features: ["Models"],
+        authMethods: ["api-key"],
+        onboardingVariants: ["fictional-plan", "fictional-codex"],
+      },
+    ];
+    const map = variantAliasMap(withVariant);
+    expect(map["fictional-plan"]).toBe("fictional");
+    expect(map["fictional-codex"]).toBe("fictional");
+  });
 
   it("appears in apiKeyEnvVarByProvider", () => {
     expect(apiKeyEnvVarByProvider(synthetic).fictional).toBe("FICTIONAL_API_KEY");

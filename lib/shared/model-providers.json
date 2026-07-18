@@ -1,4 +1,5 @@
-[
+{
+  "providers": [
   {
     "id": "anthropic",
     "envVar": "ANTHROPIC_API_KEY",
@@ -228,4 +229,19 @@
     "features": ["Models"],
     "authMethods": ["api-key"]
   }
-]
+  ],
+  "unmanagedProviders": [
+    "amazon-bedrock",
+    "anthropic-vertex",
+    "azure-openai-responses",
+    "fireworks",
+    "github-copilot",
+    "google-antigravity",
+    "google-gemini-cli",
+    "google-vertex",
+    "huggingface",
+    "minimax-cn",
+    "ollama",
+    "opencode-go"
+  ]
+}
