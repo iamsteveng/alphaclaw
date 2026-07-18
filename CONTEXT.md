@@ -4,6 +4,23 @@ A management harness for OpenClaw that also bundles the agent's trading-research
 
 ## Language
 
+### Model Providers
+
+**Model Provider**:
+A source of models identified by the prefix in a model key (`openai/gpt-5.4` → `openai`). Identity — not credentials, not models.
+_Avoid_: vendor, backend
+
+**Provider Registry**:
+The single table that owns Model Provider identity: id, env var, label, group, features, supported Auth Methods, and (for plugin-less providers) the gateway config block. Every list that names providers derives from it.
+_Avoid_: provider map, allowlist
+
+**Auth Method**:
+A way a Model Provider can be authenticated: `api-key` or `oauth`. A capability declared per provider in the Provider Registry; OpenAI and Anthropic support both.
+
+**Auth Profile**:
+A stored credential for a Model Provider via one Auth Method. Codex is an OAuth Auth Profile for OpenAI; Claude Code is an OAuth Auth Profile for Anthropic — they are not separate Model Providers.
+_Avoid_: account, login
+
 ### Trading (existing ecosystem)
 
 **Trading Plan**:
