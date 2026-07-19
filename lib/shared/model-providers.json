@@ -15,7 +15,7 @@
       ],
       "displayLabel": "Anthropic",
       "ui": {
-        "placeholder": "sk-ant-...",
+        "placeholder": "sk-ant-api03-...",
         "url": "https://console.anthropic.com",
         "linkText": "Get key",
         "extraAuthFields": [
@@ -24,7 +24,7 @@
             "label": "Anthropic Setup Token",
             "hint": "From claude setup-token (uses your Claude subscription)",
             "linkText": "Get token",
-            "placeholder": "Token..."
+            "placeholder": "sk-ant-oat01-..."
           }
         ]
       }
