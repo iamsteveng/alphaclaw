@@ -167,7 +167,7 @@ describe("server/watchdog", () => {
 
     await vi.advanceTimersByTimeAsync(5_000);
 
-    expect(clawCmd).not.toHaveBeenCalledWith("doctor --fix --yes", { quiet: true });
+    expect(clawCmd).not.toHaveBeenCalledWith("doctor --fix --yes", { quiet: true, timeoutMs: 300000 });
     expect(watchdog.getStatus()).toEqual(
       expect.objectContaining({
         lifecycle: "running",
@@ -245,7 +245,7 @@ describe("server/watchdog", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(clawCmd).toHaveBeenCalledWith("doctor --fix --yes", { quiet: true });
+    expect(clawCmd).toHaveBeenCalledWith("doctor --fix --yes", { quiet: true, timeoutMs: 300000 });
   });
 
   it("clears crash-loop lifecycle after a healthy check recovery", async () => {
@@ -336,7 +336,7 @@ describe("server/watchdog", () => {
     watchdog.onExpectedRestart();
     await flushMicrotasks();
 
-    expect(clawCmd).not.toHaveBeenCalledWith("doctor --fix --yes", { quiet: true });
+    expect(clawCmd).not.toHaveBeenCalledWith("doctor --fix --yes", { quiet: true, timeoutMs: 300000 });
     expect(insertWatchdogEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: "health_check",
@@ -520,7 +520,7 @@ describe("server/watchdog", () => {
     await vi.advanceTimersByTimeAsync(10_000);
 
     expect(clawCmd).toHaveBeenCalledTimes(1);
-    expect(clawCmd).toHaveBeenCalledWith("doctor --fix --yes", { quiet: true });
+    expect(clawCmd).toHaveBeenCalledWith("doctor --fix --yes", { quiet: true, timeoutMs: 300000 });
     expect(
       notifier.notify.mock.calls.filter((call) =>
         String(call?.[0] || "").includes("awaiting health check"),

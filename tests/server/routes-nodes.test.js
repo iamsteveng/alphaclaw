@@ -200,6 +200,7 @@ describe("server/routes/nodes", () => {
           stdout: "",
           stderr: "",
           timedOut: true,
+          failureMessage: "openclaw nodes timed out after 9s",
         }));
         const app = createApp({ clawCmd });
 
@@ -208,7 +209,7 @@ describe("server/routes/nodes", () => {
         expect(res.status).toBe(500);
         expect(res.body).toEqual({
           ok: false,
-          error: "nodes status CLI timed out after 9000ms",
+          error: "openclaw nodes timed out after 9s",
         });
       },
     );
@@ -226,6 +227,8 @@ describe("server/routes/nodes", () => {
           stderr: "",
           killed: true,
           signal: "SIGTERM",
+          timedOut: true,
+          failureMessage: "openclaw nodes timed out after 19s",
         }));
         const app = createApp({ clawCmd });
 
@@ -234,7 +237,7 @@ describe("server/routes/nodes", () => {
         expect(res.status).toBe(500);
         expect(res.body).toEqual({
           ok: false,
-          error: "node routing CLI timed out after 19000ms",
+          error: "openclaw nodes timed out after 19s",
         });
       },
     );
