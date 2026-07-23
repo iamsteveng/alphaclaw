@@ -781,6 +781,7 @@ describe("server/routes/system", () => {
         stdout: "",
         stderr: "[state-migrations] Legacy state migration warnings: ...",
         timedOut: true,
+        failureMessage: "openclaw agent timed out after 300s",
       });
       const app = createApp(deps);
 
@@ -789,7 +790,7 @@ describe("server/routes/system", () => {
       });
 
       expect(res.status).toBe(502);
-      expect(res.body).toEqual({ ok: false, error: "Agent turn timed out" });
+      expect(res.body).toEqual({ ok: false, error: "openclaw agent timed out after 300s" });
     });
 
     it("surfaces stderr when the agent command fails without timing out", async () => {
@@ -798,6 +799,7 @@ describe("server/routes/system", () => {
         ok: false,
         stdout: "",
         stderr: "GatewayCredentialsRequiredError: gateway agent requires credentials",
+        failureMessage: "GatewayCredentialsRequiredError: gateway agent requires credentials",
       });
       const app = createApp(deps);
 
@@ -882,6 +884,7 @@ describe("server/routes/system", () => {
       deps.clawCmd.mockResolvedValueOnce({
         ok: false,
         stderr: "openclaw: connection refused",
+        failureMessage: "openclaw: connection refused",
       });
       const app = createApp(deps);
 
@@ -1082,7 +1085,7 @@ describe("server/routes/system", () => {
     expect(res.status).toBe(200);
     expect(deps.clawCmd).toHaveBeenCalledWith(
       "sessions --json --all-agents",
-      { quiet: true },
+      { quiet: true, timeoutMs: 60000 },
     );
     expect(res.body.ok).toBe(true);
     expect(res.body.sessions).toEqual([
