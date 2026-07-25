@@ -35,7 +35,7 @@ If `isOpen` is `false`, output `Market closed — skipping price report.` and st
 ## Step 1 — Load GBrain plans
 
 ```bash
-gbrain list --filter type=trading-plan
+gbrain list --type trading-plan
 ```
 
 For each page where `status` is `active` OR `pending-confirmation`, read the full page and extract: `ticker`, `direction` (LONG or SHORT), `entry` (number), `setup_rating`.

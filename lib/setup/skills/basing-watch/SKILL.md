@@ -50,7 +50,7 @@ The streak is always **recomputed from price history** by the script — page fi
 ### Step 1 — Load the watch
 
 ```bash
-gbrain list --filter type=basing-watch
+gbrain list --type basing-watch
 ```
 
 Keep pages where `status: active`. If there are none, output `Basing watch is empty.` and stop.

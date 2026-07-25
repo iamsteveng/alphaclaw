@@ -18,7 +18,7 @@ Decision-mode labels and the broken-plan procedure are defined in the `trading-f
 ## Step 1 — Load active plans
 
 ```bash
-gbrain list --filter type=trading-plan
+gbrain list --type trading-plan
 ```
 
 Collect all pages where `status: active`. Extract: `ticker`, `direction`, `entry`, `target`, `invalidation`, `label`, `setup_rating`.
