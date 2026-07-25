@@ -23,18 +23,29 @@ This skill guarantees, for every tweet ingested:
 The trigger message carries the X list ID as `<list_id>`.
 
 ```bash
-xurl "/2/lists/<list_id>/tweets?tweet.fields=note_tweet,article&max_results=10"
+x-list-crawl <list_id> --max 10
 ```
 
-`xurl` is a standalone CLI binary — run it directly, not via openclaw. Do not omit `tweet.fields` or the long-form body will be missing.
+`x-list-crawl` is a standalone CLI binary on PATH — run it directly, not via openclaw. It reads the list through a stored cookie session (no paid X API), and prints normalized JSON:
+
+```json
+{ "list_id": "…", "count": 3, "posts": [
+  { "tweet_id": "…", "author": "@handle", "author_name": "…",
+    "text": "full post body (long-form resolved)", "posted_at": "ISO-8601",
+    "url": "https://x.com/handle/status/…",
+    "quoted": [ { "author": "@handle", "text": "…", "url": "…" } ] }
+] }
+```
+
+On failure it exits non-zero with the error on stderr (e.g. an expired session) — report that in the result block; do not fall back to any other fetch method. **Known limitation:** X Articles come through with only their tweet text, not the full article body — ingest what's returned and do not attempt a second fetch.
 
 ## Step 2 — Ingest each post
 
-For each post:
-- **Primary body** (in priority order): `article.plain_text` if present (X Article), else `note_tweet.text` if present (long-form tweet), else the tweet `text` field. Never concatenate multiple fields.
-- Include any quoted or referenced posts inline under a `## Quoted` section, with the author handle and URL resolved from the API response.
-- Slug: exactly `twitter/post/<tweet_id>` — no variations, no date suffixes. Skip if already exists. On check error, skip and count as error — never ingest under a different slug.
-- Frontmatter: `type=tweet, tweet_id, author (with @), list_id=<list_id>, posted_at (ISO-8601), url=https://twitter.com/<handle>/status/<tweet_id>, tags=[twitter, x-list-ingest], quoted_ids if any`.
+For each entry in `posts`:
+- **Primary body**: the `text` field — it already carries the full long-form body. Never concatenate fields.
+- Include any entries in the `quoted` array inline under a `## Quoted` section, using each quoted entry's `author`, `text`, and `url`.
+- Slug: exactly `twitter/post/<tweet_id>` (from `tweet_id`) — no variations, no date suffixes. Skip if already exists. On check error, skip and count as error — never ingest under a different slug.
+- Frontmatter: `type=tweet, tweet_id, author (the `author` field, with @), list_id=<list_id>, posted_at (the `posted_at` field, ISO-8601), url (the `url` field), tags=[twitter, x-list-ingest], quoted_ids if any`.
 
 ## Step 3 — Author resolution and entity linking
 
