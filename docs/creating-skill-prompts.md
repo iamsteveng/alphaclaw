@@ -198,6 +198,15 @@ triggers:
 - **Missing the close** → after sending actions, always tell the user what to do next.
 - **Frontmatter typos** → `triggers:` not `trigger:`, `name:` must match directory name.
 
+## Referencing CLI commands (gbrain gotcha)
+
+Skills call CLIs like `gbrain` directly. **`gbrain` silently ignores unknown flags** — a wrong flag doesn't error, it just gets dropped, so the command runs with different behavior than you intended and returns *wrong data with no warning*. PR #66 fixed three skills that used `gbrain list --filter type=<type>`; `gbrain list` has no `--filter` option, so the filter was ignored and the skills loaded *every* page instead of just their plans.
+
+Rules:
+- **Confirm every flag against `gbrain <subcommand> --help`** before putting it in a skill — don't trust memory or copy from another skill.
+- For `gbrain list`, filter by type with **`--type <type>`**, never `--filter type=<type>`.
+- A CI guard (`tests/server/skills-gbrain-flags.test.js`) fails the build if any skill's `gbrain list` uses a flag outside gbrain's real set. Don't delete it — it exists because this mistake is silent.
+
 ## When to make a skill vs a one-off prompt
 
 | Make a skill when... | Keep as one-off when... |
