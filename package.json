@@ -15,7 +15,8 @@
   "homepage": "https://github.com/chrysb/alphaclaw#readme",
   "license": "MIT",
   "bin": {
-    "alphaclaw": "bin/alphaclaw.js"
+    "alphaclaw": "bin/alphaclaw.js",
+    "x-list-crawl": "bin/x-list-crawl.js"
   },
   "files": [
     "bin/",
@@ -43,6 +44,7 @@
     "express": "^4.21.0",
     "http-proxy": "^1.18.1",
     "openclaw": "^2026.6.11",
+    "rettiwt-api": "^7.1.2",
     "ws": "^8.19.0"
   },
   "devDependencies": {
