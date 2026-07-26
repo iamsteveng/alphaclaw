@@ -16,7 +16,8 @@
   "license": "MIT",
   "bin": {
     "alphaclaw": "bin/alphaclaw.js",
-    "x-list-crawl": "bin/x-list-crawl.js"
+    "x-list-crawl": "bin/x-list-crawl.js",
+    "x-post-crawl": "bin/x-post-crawl.js"
   },
   "files": [
     "bin/",
