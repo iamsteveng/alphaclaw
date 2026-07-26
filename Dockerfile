@@ -72,12 +72,13 @@ RUN npm run build:ui
 # Remove devDependencies — they were only needed for the UI build step
 RUN npm prune --omit=dev && npm cache clean --force
 
-# Expose alphaclaw + x-list-crawl binaries globally (login shells reset PATH via
-# /etc/profile and drop /app/node_modules/.bin, so npm bin entries alone are not
-# enough for shells the agent spawns)
-RUN chmod +x bin/alphaclaw.js bin/x-list-crawl.js \
+# Expose alphaclaw + x-list-crawl + x-post-crawl binaries globally (login shells
+# reset PATH via /etc/profile and drop /app/node_modules/.bin, so npm bin entries
+# alone are not enough for shells the agent spawns)
+RUN chmod +x bin/alphaclaw.js bin/x-list-crawl.js bin/x-post-crawl.js \
  && ln -s /app/bin/alphaclaw.js /usr/local/bin/alphaclaw \
- && ln -s /app/bin/x-list-crawl.js /usr/local/bin/x-list-crawl
+ && ln -s /app/bin/x-list-crawl.js /usr/local/bin/x-list-crawl \
+ && ln -s /app/bin/x-post-crawl.js /usr/local/bin/x-post-crawl
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

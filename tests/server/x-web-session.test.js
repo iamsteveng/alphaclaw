@@ -3,6 +3,11 @@ const {
   buildCookieString,
   buildApiKey,
   normalizePost,
+  parseTweetId,
+  findArticle,
+  reconstructArticle,
+  normalizePostDetailed,
+  fetchPostByUrl,
   fetchListTweets,
   verifyWebSession,
 } = require("../../lib/server/x-web-session");
@@ -145,6 +150,100 @@ describe("server/x-web-session", () => {
       await expect(verifyWebSession({ apiKey, RettiwtCtor: FakeRettiwt })).rejects.toThrow(
         /rejected the session/,
       );
+    });
+  });
+
+  // ── Single post / article by URL ──
+  describe("parseTweetId", () => {
+    it("extracts the id from x.com / twitter.com status URLs", () => {
+      expect(parseTweetId("https://x.com/a16z/status/2080669591349727628")).toBe("2080669591349727628");
+      expect(parseTweetId("https://twitter.com/h/status/123?s=20")).toBe("123");
+    });
+    it("accepts a bare numeric id", () => {
+      expect(parseTweetId("  123456  ")).toBe("123456");
+    });
+    it("rejects non-status URLs and junk", () => {
+      expect(parseTweetId("https://x.com/a16z")).toBeNull();
+      expect(parseTweetId("not a url")).toBeNull();
+      expect(parseTweetId("")).toBeNull();
+    });
+  });
+
+  // Article on a *quoted* status — exercises the recursive search.
+  const articleTweet = (over = {}) =>
+    fakeTweet({
+      id: "999",
+      tweetBy: { userName: "a16z", fullName: "a16z" },
+      fullText: "teaser tweet text",
+      url: "https://x.com/a16z/status/999",
+      _raw: {
+        quoted_status_result: { result: { article: { article_results: { result: {
+          title: "Renting is stressful",
+          preview_text: "a short preview",
+          content_state: { blocks: [{ text: "Block one." }, { text: "Block two." }, {}] },
+        } } } } },
+      },
+      ...over,
+    });
+
+  describe("findArticle / reconstructArticle", () => {
+    it("finds an article nested on a quoted status", () => {
+      const art = findArticle(articleTweet()._raw);
+      expect(art?.title).toBe("Renting is stressful");
+    });
+    it("returns null when there is no article", () => {
+      expect(findArticle(fakeTweet()._raw ?? {})).toBeNull();
+    });
+    it("reconstructs the body by joining block text", () => {
+      const art = findArticle(articleTweet()._raw);
+      expect(reconstructArticle(art)).toEqual({
+        title: "Renting is stressful",
+        preview: "a short preview",
+        body: "Block one.\nBlock two.\n",
+        blocks: 3,
+      });
+    });
+  });
+
+  describe("normalizePostDetailed", () => {
+    it("marks a plain post is_article=false", () => {
+      const out = normalizePostDetailed(fakeTweet());
+      expect(out.is_article).toBe(false);
+      expect(out.text).toContain("long-form body");
+    });
+    it("attaches the full article body for an article post", () => {
+      const out = normalizePostDetailed(articleTweet());
+      expect(out).toMatchObject({
+        tweet_id: "999",
+        author: "@a16z",
+        is_article: true,
+        article_title: "Renting is stressful",
+        article_preview: "a short preview",
+        article_body: "Block one.\nBlock two.\n",
+        article_blocks: 3,
+      });
+    });
+  });
+
+  describe("fetchPostByUrl", () => {
+    const makeCtor = (tweet) =>
+      class {
+        constructor(cfg) { this.cfg = cfg; this.tweet = { details: async (id) => ({ ...tweet, id }) }; }
+      };
+    it("parses the id from a URL, fetches, and returns the detailed post", async () => {
+      const out = await fetchPostByUrl({
+        url: "https://x.com/a16z/status/999",
+        apiKey: "K",
+        RettiwtCtor: makeCtor(articleTweet()),
+      });
+      expect(out.tweet_id).toBe("999");
+      expect(out.is_article).toBe(true);
+    });
+    it("throws on an unparseable URL and on a missing apiKey", async () => {
+      await expect(fetchPostByUrl({ url: "https://x.com/a16z", apiKey: "K", RettiwtCtor: makeCtor(fakeTweet()) }))
+        .rejects.toThrow(/could not parse a tweet ID/);
+      await expect(fetchPostByUrl({ url: "https://x.com/a16z/status/1" }))
+        .rejects.toThrow(/apiKey/);
     });
   });
 });
