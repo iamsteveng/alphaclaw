@@ -185,9 +185,10 @@ Prod runs `openai/gpt-5.4` and delivers cron output to **Discord** (not Telegram
 | Variable | Description |
 |---|---|
 | `WATCHDOG_AUTO_REPAIR` | Auto-restart the gateway on crash/unhealthy detection. Defaults to `true` in code — set to `false` to opt out on a specific deployment. |
-| `X_INGEST_LIST_ID` | Numeric X list ID the hourly `x-list-ingest` cron reads (registered via the dashboard's Cron → "X List → gbrain Ingest" card). The cron also requires a connected X cookie session (Models → X Free Crawl card) — registration is gated on both. |
 
 **Note:** Railway's Trial plan can cause OOM crashes — Hobby plan (8 GB RAM) is required for stable operation.
+
+**X list ingest cron:** the `x-list-ingest` cron (runs every 2h) is configured entirely from the dashboard's Cron → "X List → gbrain Ingest" card — enter the numeric X list ID there. It also requires a connected X cookie session (Models → X Free Crawl card); registration is gated on both. There is no `X_INGEST_LIST_ID` env var.
 
 ## Adding OpenClaw Workspace Skills
 

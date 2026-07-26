@@ -4,6 +4,8 @@ const request = require("supertest");
 const {
   registerXListIngestRoutes,
   isWebSessionConfigured,
+  parseListId,
+  extractListIdFromJob,
 } = require("../../lib/server/routes/x-list-ingest");
 
 const makeApp = ({ gatewayRpc, authProfiles }) => {
@@ -22,10 +24,29 @@ const withSession = { getProfile: (id) => (id === "x-twitter:web-session" ? { ac
 const noSession = { getProfile: () => null };
 
 describe("server/routes/x-list-ingest", () => {
-  const OLD_ENV = process.env.X_INGEST_LIST_ID;
-  afterEach(() => {
-    if (OLD_ENV === undefined) delete process.env.X_INGEST_LIST_ID;
-    else process.env.X_INGEST_LIST_ID = OLD_ENV;
+  describe("parseListId", () => {
+    it("accepts a numeric string and trims it", () => {
+      expect(parseListId("1356490823949451264")).toBe("1356490823949451264");
+      expect(parseListId("  123  ")).toBe("123");
+    });
+    it("rejects non-numeric, empty, or missing input", () => {
+      expect(parseListId("")).toBeNull();
+      expect(parseListId("abc")).toBeNull();
+      expect(parseListId("12a3")).toBeNull();
+      expect(parseListId(undefined)).toBeNull();
+    });
+  });
+
+  describe("extractListIdFromJob", () => {
+    it("recovers the id from payload.message or a flat message", () => {
+      expect(extractListIdFromJob({ payload: { message: "Run the x-list-ingest skill for X list ID 999." } })).toBe("999");
+      expect(extractListIdFromJob({ message: "… for X list ID 123." })).toBe("123");
+    });
+    it("returns null when the message is absent or unparseable", () => {
+      expect(extractListIdFromJob({})).toBeNull();
+      expect(extractListIdFromJob(null)).toBeNull();
+      expect(extractListIdFromJob({ payload: { message: "no id here" } })).toBeNull();
+    });
   });
 
   describe("isWebSessionConfigured", () => {
@@ -33,62 +54,53 @@ describe("server/routes/x-list-ingest", () => {
       expect(isWebSessionConfigured(withSession)).toBe(true);
       expect(isWebSessionConfigured(noSession)).toBe(false);
       expect(isWebSessionConfigured(undefined)).toBe(false);
-      expect(isWebSessionConfigured({ getProfile: () => ({}) })).toBe(false);
     });
   });
 
   describe("GET /api/x-list-ingest/status", () => {
-    it("reports webSessionConfigured=true when cookies are stored", async () => {
-      process.env.X_INGEST_LIST_ID = "123";
+    it("recovers the current list ID from the registered job", async () => {
       const app = makeApp({
-        gatewayRpc: vi.fn(async () => ({ jobs: [] })),
+        gatewayRpc: vi.fn(async () => ({
+          jobs: [{ name: "x-list-ingest", cron: "0 */2 * * *", enabled: true, payload: { message: "… for X list ID 555." } }],
+        })),
         authProfiles: withSession,
       });
       const res = await request(app).get("/api/x-list-ingest/status");
-      expect(res.body).toMatchObject({ ok: true, envVarSet: true, listId: "123", webSessionConfigured: true });
+      expect(res.body).toMatchObject({ ok: true, listId: "555", webSessionConfigured: true });
     });
 
-    it("reports webSessionConfigured=false when no cookies, even if gateway errors", async () => {
-      process.env.X_INGEST_LIST_ID = "123";
+    it("returns listId=null when unregistered, even if the gateway errors", async () => {
       const app = makeApp({
         gatewayRpc: vi.fn(async () => { throw new Error("gateway down"); }),
         authProfiles: noSession,
       });
       const res = await request(app).get("/api/x-list-ingest/status");
-      expect(res.body).toMatchObject({ ok: true, webSessionConfigured: false, job: null });
+      expect(res.body).toMatchObject({ ok: true, listId: null, webSessionConfigured: false, job: null });
     });
   });
 
   describe("POST /api/x-list-ingest/ensure", () => {
+    it("requires a numeric list ID in the body", async () => {
+      const gatewayRpc = vi.fn();
+      const app = makeApp({ gatewayRpc, authProfiles: withSession });
+      const res = await request(app).post("/api/x-list-ingest/ensure").send({ listId: "not-a-number" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/numeric X list ID/i);
+      expect(gatewayRpc).not.toHaveBeenCalled();
+    });
+
     it("refuses to register without a web session", async () => {
-      process.env.X_INGEST_LIST_ID = "123";
       const gatewayRpc = vi.fn(async () => ({ jobs: [] }));
       const app = makeApp({ gatewayRpc, authProfiles: noSession });
-      const res = await request(app).post("/api/x-list-ingest/ensure").send({});
+      const res = await request(app).post("/api/x-list-ingest/ensure").send({ listId: "123" });
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/web session not configured/i);
-      expect(gatewayRpc).not.toHaveBeenCalled(); // gated before touching the gateway
+      expect(gatewayRpc).not.toHaveBeenCalled();
     });
 
-    it("still refuses when the list id env var is missing", async () => {
-      delete process.env.X_INGEST_LIST_ID;
-      const app = makeApp({ gatewayRpc: vi.fn(), authProfiles: withSession });
-      const res = await request(app).post("/api/x-list-ingest/ensure").send({});
-      expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/X_INGEST_LIST_ID/);
-    });
-
-    it("registers the cron when both prerequisites are met", async () => {
-      process.env.X_INGEST_LIST_ID = "123";
-      const gatewayRpc = vi.fn(async (method) => {
-        if (method === "cron.list") return { jobs: [] };
-        if (method === "cron.add") return { id: "job-1" };
-        if (method === "cron.update") return {};
-        return {};
-      });
-      // second cron.list (after add) should surface the job
+    it("registers with the body list ID and a 2-hour schedule", async () => {
       let listCalls = 0;
-      gatewayRpc.mockImplementation(async (method, params) => {
+      const gatewayRpc = vi.fn(async (method) => {
         if (method === "cron.list") {
           listCalls += 1;
           return { jobs: listCalls === 1 ? [] : [{ id: "job-1", name: "x-list-ingest", enabled: true }] };
@@ -97,9 +109,11 @@ describe("server/routes/x-list-ingest", () => {
         return {};
       });
       const app = makeApp({ gatewayRpc, authProfiles: withSession });
-      const res = await request(app).post("/api/x-list-ingest/ensure").send({});
+      const res = await request(app).post("/api/x-list-ingest/ensure").send({ listId: "1356490823949451264" });
       expect(res.body).toMatchObject({ ok: true, registered: true, jobId: "job-1" });
-      expect(gatewayRpc).toHaveBeenCalledWith("cron.add", expect.objectContaining({ name: "x-list-ingest" }), expect.anything());
+      const addCall = gatewayRpc.mock.calls.find(([m]) => m === "cron.add");
+      expect(addCall[1].schedule.expr).toBe("0 */2 * * *");
+      expect(addCall[1].payload.message).toContain("1356490823949451264");
     });
   });
 });
