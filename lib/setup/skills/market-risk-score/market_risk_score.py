@@ -1481,7 +1481,7 @@ def format_dxy_output(trading_day, r) -> str:
         "",
         "Alerts",
         f"  Breakout Warning:      {'YES ⚠️' if r.get('breakout_warning') else 'no'}",
-        f"  Equity Risk Confirmed: {'YES \U0001f6a8' if r.get('dxy_equity_risk_confirmed') else 'no'}",
+        f"  Equity Risk Confirmed: {'YES 🚨' if r.get('dxy_equity_risk_confirmed') else 'no'}",
     ]
 
     return "\n".join(lines)
