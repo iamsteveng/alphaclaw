@@ -40,7 +40,6 @@ describe("frontend/model-config", () => {
       { key: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro" },
       { key: "anthropic/claude-opus-4-7", label: "Opus 4.7" },
       { key: "anthropic/claude-opus-4-6", label: "Opus 4.6" },
-      { key: "openai-codex/gpt-5.3-codex", label: "Codex 5.3" },
       { key: "openai-codex/gpt-5.4", label: "GPT-5.4" },
       { key: "openai-codex/gpt-5.5", label: "GPT-5.5" },
     ]);
@@ -48,12 +47,40 @@ describe("frontend/model-config", () => {
     expect(featured.map((entry) => entry.key)).toEqual([
       "anthropic/claude-opus-4-7",
       "anthropic/claude-opus-4-6",
-      "openai-codex/gpt-5.3-codex",
       "openai-codex/gpt-5.5",
+      "openai-codex/gpt-5.4",
       "google/gemini-3.1-pro-preview",
     ]);
     expect(featured[0]?.featuredLabel).toBe("Opus 4.7");
-    expect(featured[3]?.featuredLabel).toBe("GPT-5.5");
+    expect(featured[2]?.featuredLabel).toBe("GPT-5.5");
+    expect(featured[3]?.featuredLabel).toBe("GPT-5.4");
     expect(featured[4]?.featuredLabel).toBe("Gemini 3.1 Pro");
+  });
+
+  it("prefers the codex key when both codex and api-key entries exist", async () => {
+    const modelConfig = await loadModelConfig();
+    const featured = modelConfig.getFeaturedModels([
+      { key: "openai/gpt-5.5", label: "GPT-5.5" },
+      { key: "openai-codex/gpt-5.5", label: "GPT-5.5" },
+    ]);
+
+    expect(featured.map((entry) => entry.key)).toEqual([
+      "openai-codex/gpt-5.5",
+    ]);
+  });
+
+  it("falls back to the openai/ key when the codex key is absent", async () => {
+    const modelConfig = await loadModelConfig();
+    const featured = modelConfig.getFeaturedModels([
+      { key: "openai/gpt-5.5", label: "GPT-5.5" },
+      { key: "openai/gpt-5.4", label: "GPT-5.4" },
+    ]);
+
+    expect(featured.map((entry) => entry.key)).toEqual([
+      "openai/gpt-5.5",
+      "openai/gpt-5.4",
+    ]);
+    expect(featured[0]?.featuredLabel).toBe("GPT-5.5");
+    expect(featured[1]?.featuredLabel).toBe("GPT-5.4");
   });
 });
