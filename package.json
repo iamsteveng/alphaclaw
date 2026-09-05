@@ -44,7 +44,7 @@
     "@xdevplatform/xurl": "^1.0.0",
     "express": "^4.21.0",
     "http-proxy": "^1.18.1",
-    "openclaw": "^2026.6.11",
+    "openclaw": "2026.9.1",
     "rettiwt-api": "^7.1.2",
     "ws": "^8.19.0"
   },
@@ -63,6 +63,6 @@
     "wouter-preact": "^3.7.1"
   },
   "engines": {
-    "node": ">=22.14.0"
+    "node": ">=22.22.3"
   }
 }
