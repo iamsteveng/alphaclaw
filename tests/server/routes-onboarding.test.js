@@ -744,9 +744,10 @@ describe("server/routes/onboarding", () => {
     expect(files.get("/tmp/openclaw/openclaw.json")).not.toContain(
       '"transformsDir"',
     );
-    expect(files.get("/tmp/openclaw/exec-approvals.json")).toContain(
-      '"askFallback": "full"',
-    );
+    // OpenClaw 2026.8.1+ keeps exec approvals in SQLite and treats a
+    // policy-bearing exec-approvals.json as a blocking legacy store, so
+    // onboarding must not write one (see exec-defaults-config version gate).
+    expect(files.get("/tmp/openclaw/exec-approvals.json")).toBeUndefined();
     expect(
       deps.shellCmd.mock.calls.some(([cmd]) =>
         cmd.includes(

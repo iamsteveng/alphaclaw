@@ -31,6 +31,10 @@ describe("server/startup", () => {
       return "https://setup.example.com";
     });
     const ensureGatewayProxyConfig = vi.fn(() => callOrder.push("ensureGatewayProxyConfig"));
+    const runOpenclawDoctorMigration = vi.fn(() => {
+      callOrder.push("runOpenclawDoctorMigration");
+      return { ran: false, ok: true, reason: "up-to-date" };
+    });
     const startGateway = vi.fn(() => callOrder.push("startGateway"));
     const watchdog = {
       start: vi.fn(() => callOrder.push("watchdog.start")),
@@ -40,6 +44,7 @@ describe("server/startup", () => {
     };
 
     runOnboardedBootSequence({
+      runOpenclawDoctorMigration,
       ensureManagedExecDefaults,
       ensureUsageTrackerPluginConfig,
       ensureAcpAgentConfig,
@@ -67,6 +72,7 @@ describe("server/startup", () => {
       "syncChannelConfig",
       "resolveSetupUrl",
       "ensureGatewayProxyConfig",
+      "runOpenclawDoctorMigration",
       "startGateway",
       "watchdog.start",
       "gmailWatchService.start",
@@ -334,5 +340,160 @@ describe("ensureGbrainEmbeddingConfig", () => {
       expect.stringContaining("embedding provider wire-up failed"),
       "gbrain init failed",
     );
+  });
+});
+
+describe("runOpenclawUpgradeDoctor", () => {
+  const { runOpenclawUpgradeDoctor } = require("../../lib/server/startup");
+
+  const createLogger = () => {
+    const lines = [];
+    return {
+      lines,
+      log: (line) => lines.push(String(line)),
+      error: (line) => lines.push(String(line)),
+    };
+  };
+
+  const createFsStub = ({ marker = null } = {}) => {
+    const writes = [];
+    return {
+      writes,
+      readFileSync: vi.fn(() => {
+        if (marker === null) {
+          const err = new Error("ENOENT");
+          err.code = "ENOENT";
+          throw err;
+        }
+        return marker;
+      }),
+      writeFileSync: vi.fn((filePath, contents) => writes.push([filePath, contents])),
+      mkdirSync: vi.fn(() => {}),
+    };
+  };
+
+  it("runs doctor and writes the marker when the version differs", () => {
+    const fsStub = createFsStub({ marker: "2026.7.9\n" });
+    const execSyncImpl = vi.fn(() => "line one\nAll checks passed\n");
+    const logger = createLogger();
+
+    const result = runOpenclawUpgradeDoctor({
+      fsModule: fsStub,
+      execSyncImpl,
+      markerPath: "/data/.alphaclaw/openclaw-doctor-version",
+      openclawVersion: "2026.9.1",
+      env: { HOME: "/data" },
+      logger,
+    });
+
+    expect(result).toMatchObject({ ran: true, ok: true, code: 0, version: "2026.9.1" });
+    expect(execSyncImpl).toHaveBeenCalledTimes(1);
+    const [cmd, opts] = execSyncImpl.mock.calls[0];
+    expect(cmd).toBe("openclaw doctor --fix --non-interactive");
+    expect(opts.env).toEqual({ HOME: "/data" });
+    expect(opts.timeout).toBeGreaterThanOrEqual(60000);
+    expect(fsStub.writes).toEqual([
+      ["/data/.alphaclaw/openclaw-doctor-version", "2026.9.1\n"],
+    ]);
+    expect(logger.lines.join("\n")).toContain("openclaw doctor --fix exited 0");
+  });
+
+  it("runs doctor when no marker exists yet (fresh volume)", () => {
+    const fsStub = createFsStub({ marker: null });
+    const execSyncImpl = vi.fn(() => "ok");
+
+    const result = runOpenclawUpgradeDoctor({
+      fsModule: fsStub,
+      execSyncImpl,
+      markerPath: "/data/.alphaclaw/openclaw-doctor-version",
+      openclawVersion: "2026.9.1",
+      env: {},
+      logger: createLogger(),
+    });
+
+    expect(result.ran).toBe(true);
+    expect(fsStub.writes.length).toBe(1);
+  });
+
+  it("skips doctor when the marker already matches the installed version", () => {
+    const fsStub = createFsStub({ marker: "2026.9.1\n" });
+    const execSyncImpl = vi.fn(() => "");
+
+    const result = runOpenclawUpgradeDoctor({
+      fsModule: fsStub,
+      execSyncImpl,
+      markerPath: "/data/.alphaclaw/openclaw-doctor-version",
+      openclawVersion: "2026.9.1",
+      env: {},
+      logger: createLogger(),
+    });
+
+    expect(result).toEqual({ ran: false, ok: true, reason: "up-to-date", version: "2026.9.1" });
+    expect(execSyncImpl).not.toHaveBeenCalled();
+    expect(fsStub.writes).toEqual([]);
+  });
+
+  it("logs and continues without writing the marker when doctor exits nonzero", () => {
+    const fsStub = createFsStub({ marker: null });
+    const failure = Object.assign(new Error("doctor failed"), {
+      status: 1,
+      stdout: "checking...\n",
+      stderr: "retained conflicting legacy JSON\n",
+    });
+    const execSyncImpl = vi.fn(() => {
+      throw failure;
+    });
+    const logger = createLogger();
+
+    const result = runOpenclawUpgradeDoctor({
+      fsModule: fsStub,
+      execSyncImpl,
+      markerPath: "/data/.alphaclaw/openclaw-doctor-version",
+      openclawVersion: "2026.9.1",
+      env: {},
+      logger,
+    });
+
+    expect(result).toMatchObject({ ran: true, ok: false, code: 1 });
+    expect(fsStub.writes).toEqual([]);
+    const logged = logger.lines.join("\n");
+    expect(logged).toContain("openclaw doctor --fix exited 1");
+    expect(logged).toContain("retained conflicting legacy JSON");
+  });
+
+  it("skips when the installed OpenClaw version cannot be resolved", () => {
+    const fsStub = createFsStub({ marker: null });
+    const execSyncImpl = vi.fn(() => "");
+
+    const result = runOpenclawUpgradeDoctor({
+      fsModule: fsStub,
+      execSyncImpl,
+      openclawVersion: null,
+      env: {},
+      logger: createLogger(),
+    });
+
+    expect(result).toMatchObject({ ran: false, reason: "unknown-version" });
+    expect(execSyncImpl).not.toHaveBeenCalled();
+  });
+
+  it("never throws when the marker write fails", () => {
+    const fsStub = createFsStub({ marker: null });
+    fsStub.writeFileSync = vi.fn(() => {
+      throw new Error("read-only fs");
+    });
+    const execSyncImpl = vi.fn(() => "ok");
+    const logger = createLogger();
+
+    const result = runOpenclawUpgradeDoctor({
+      fsModule: fsStub,
+      execSyncImpl,
+      openclawVersion: "2026.9.1",
+      env: {},
+      logger,
+    });
+
+    expect(result).toMatchObject({ ran: false, reason: "error" });
+    expect(logger.lines.join("\n")).toContain("non-fatal");
   });
 });
