@@ -21,6 +21,26 @@ A way a Model Provider can be authenticated: `api-key` or `oauth`. A capability 
 A stored credential for a Model Provider via one Auth Method. Codex is an OAuth Auth Profile for OpenAI; Claude Code is an OAuth Auth Profile for Anthropic — they are not separate Model Providers.
 _Avoid_: account, login
 
+**Onboarding Variant**:
+A picker-level provider prefix (`openai-codex`) that selects a Model Provider together with an Auth Method. Declared in the Provider Registry; rewritten to the base Model Provider when written to the gateway, and re-injected into the Model Catalog so it stays pickable.
+_Avoid_: codex provider, alias provider
+
+**Model Catalog**:
+The list of models the running OpenClaw reports as available. Owned by OpenClaw, not AlphaClaw; every model key a user can pick comes from it.
+_Avoid_: supported models, model list
+
+**Bootstrap Catalog**:
+A snapshot of the Model Catalog shipped with AlphaClaw, shown only until the live Model Catalog has loaded.
+_Avoid_: seed list, default catalog
+
+**Fallback Models**:
+The hand-written last-resort model list used when neither the live Model Catalog nor the Bootstrap Catalog is available.
+_Avoid_: hardcoded models, defaults
+
+**Featured Model**:
+A model given a shortcut chip in the model picker. A Featured Model is identified by its model key alone; its Auth Method is never part of its label.
+_Avoid_: recommended model, quick pick
+
 ### Trading (existing ecosystem)
 
 **Trading Plan**:
