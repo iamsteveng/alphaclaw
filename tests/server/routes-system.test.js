@@ -1006,6 +1006,162 @@ describe("server/routes/system", () => {
       expect(res.body).toEqual({ ok: false, error: "Selected session was not found" });
     });
 
+    it("derives the agent id from the sessionKey", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd
+        .mockResolvedValueOnce({
+          ok: true,
+          stdout: JSON.stringify({
+            sessions: [
+              { key: "agent:claude:main", sessionId: "claude-session", updatedAt: 10 },
+            ],
+          }),
+        })
+        .mockResolvedValueOnce({ ok: true, stdout: "done" });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "hello",
+        sessionKey: "agent:claude:main",
+      });
+
+      expect(res.status).toBe(200);
+      expect(deps.clawCmd).toHaveBeenNthCalledWith(
+        2,
+        "agent --agent claude --message 'hello' --session-id 'claude-session'",
+        { quiet: true, timeoutMs: 300000 },
+      );
+    });
+
+    it("uses an explicit agentId from the request body over the sessionKey", async () => {
+      const deps = createSystemDeps();
+      deps.clawCmd
+        .mockResolvedValueOnce({
+          ok: true,
+          stdout: JSON.stringify({
+            sessions: [
+              { key: "agent:claude:main", sessionId: "claude-session", updatedAt: 10 },
+            ],
+          }),
+        })
+        .mockResolvedValueOnce({ ok: true, stdout: "done" });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "hello",
+        agentId: "research_bot",
+        sessionKey: "agent:claude:main",
+      });
+
+      expect(res.status).toBe(200);
+      expect(deps.clawCmd).toHaveBeenNthCalledWith(
+        2,
+        "agent --agent research_bot --message 'hello' --session-id 'claude-session'",
+        { quiet: true, timeoutMs: 300000 },
+      );
+    });
+
+    it("falls back to the gateway default agent from openclaw.json", async () => {
+      const deps = createSystemDeps();
+      deps.fs.readFileSync.mockImplementation((targetPath) => {
+        if (targetPath === "/tmp/openclaw/openclaw.json") {
+          return JSON.stringify({
+            agents: {
+              list: [
+                { id: "main", default: false },
+                { id: "claude", default: true },
+              ],
+            },
+          });
+        }
+        throw new Error("no config");
+      });
+      deps.clawCmd.mockResolvedValueOnce({ ok: true, stdout: "done" });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "hello",
+      });
+
+      expect(res.status).toBe(200);
+      expect(deps.clawCmd).toHaveBeenCalledWith(
+        "agent --agent claude --message 'hello'",
+        { quiet: true, timeoutMs: 300000 },
+      );
+    });
+
+    it("falls back to the first configured agent when no default is marked", async () => {
+      const deps = createSystemDeps();
+      deps.fs.readFileSync.mockImplementation((targetPath) => {
+        if (targetPath === "/tmp/openclaw/openclaw.json") {
+          return JSON.stringify({ agents: { list: [{ id: "claude" }] } });
+        }
+        throw new Error("no config");
+      });
+      deps.clawCmd.mockResolvedValueOnce({ ok: true, stdout: "done" });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "hello",
+      });
+
+      expect(res.status).toBe(200);
+      expect(deps.clawCmd).toHaveBeenCalledWith(
+        "agent --agent claude --message 'hello'",
+        { quiet: true, timeoutMs: 300000 },
+      );
+    });
+
+    it("falls back to main when the config has no agents", async () => {
+      const deps = createSystemDeps();
+      deps.fs.readFileSync.mockImplementation((targetPath) => {
+        if (targetPath === "/tmp/openclaw/openclaw.json") {
+          return JSON.stringify({});
+        }
+        throw new Error("no config");
+      });
+      deps.clawCmd.mockResolvedValueOnce({ ok: true, stdout: "done" });
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "hello",
+      });
+
+      expect(res.status).toBe(200);
+      expect(deps.clawCmd).toHaveBeenCalledWith(
+        "agent --agent main --message 'hello'",
+        { quiet: true, timeoutMs: 300000 },
+      );
+    });
+
+    it("returns 400 when the explicit agentId is not shell-safe", async () => {
+      const deps = createSystemDeps();
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "hello",
+        agentId: "main; rm -rf /",
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ ok: false, error: "Invalid agent id" });
+      expect(deps.clawCmd).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 when the sessionKey carries an unsafe agent id", async () => {
+      const deps = createSystemDeps();
+      const app = createApp(deps);
+
+      const res = await request(app).post("/api/agent/message").send({
+        message: "hello",
+        sessionKey: "agent:main;whoami:main",
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ ok: false, error: "Invalid agent id" });
+      expect(deps.clawCmd).not.toHaveBeenCalled();
+    });
+
     it("returns 502 when session lookup clawCmd fails", async () => {
       const deps = createSystemDeps();
       deps.clawCmd.mockResolvedValueOnce({ ok: false, stderr: "sessions command failed" });
