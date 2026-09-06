@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Reclaim volume space held by the Codex app-server debug-log database BEFORE
+# anything below writes to /data. A stuck write-ahead log can fill the volume
+# and every later write (including this script's own steps) fails with ENOSPC.
+# The script never exits non-zero; see scripts/boot/reclaim-codex-wal.py.
+OPENCLAW_STATE_DIR="${OPENCLAW_STATE_DIR:-/data/.openclaw}" python3 /app/scripts/boot/reclaim-codex-wal.py 2>&1 || true
+
 # Initialize gbrain on the persistent volume (idempotent — safe to run on every start)
 echo "[gbrain] Initializing brain at /data/gbrain..."
 gbrain init 2>&1 | head -20
