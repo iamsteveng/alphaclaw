@@ -41,9 +41,19 @@ describe("server/routes/watchdog", () => {
     const res = await request(app).get("/api/watchdog/status");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      ok: true,
-      status: { lifecycle: "running", health: "healthy" },
+    expect(res.body.ok).toBe(true);
+    expect(res.body.status).toMatchObject({
+      lifecycle: "running",
+      health: "healthy",
+    });
+    // Cron failure alerting rides on the watchdog notification channel, so its
+    // state is reported alongside gateway health.
+    expect(res.body.status.cronFailureAlert).toEqual({
+      enabled: true,
+      intervalMinutes: 10,
+      lastPollAt: null,
+      lastAlertAt: null,
+      alertedJobs: [],
     });
     expect(deps.watchdog.getStatus).toHaveBeenCalledTimes(1);
   });

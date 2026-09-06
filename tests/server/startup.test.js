@@ -39,13 +39,22 @@ describe("server/startup", () => {
     const startGateway = vi.fn(() => callOrder.push("startGateway"));
     const watchdog = {
       start: vi.fn(() => callOrder.push("watchdog.start")),
+      getSettings: vi.fn(() => ({ notificationsEnabled: true })),
     };
     const gmailWatchService = {
       start: vi.fn(() => callOrder.push("gmailWatchService.start")),
     };
+    const startCronFailureAlertScheduler = vi.fn(() =>
+      callOrder.push("startCronFailureAlertScheduler"),
+    );
+    const cronService = { getBulkJobRuns: vi.fn() };
+    const watchdogNotifier = { notify: vi.fn() };
 
     runOnboardedBootSequence({
       runOpenclawDoctorMigration,
+      startCronFailureAlertScheduler,
+      cronService,
+      watchdogNotifier,
       ensureManagedExecDefaults,
       ensureUsageTrackerPluginConfig,
       ensureAcpAgentConfig,
@@ -77,7 +86,53 @@ describe("server/startup", () => {
       "startGateway",
       "watchdog.start",
       "gmailWatchService.start",
+      "startCronFailureAlertScheduler",
     ]);
+    expect(startCronFailureAlertScheduler).toHaveBeenCalledTimes(1);
+    const alertDeps = startCronFailureAlertScheduler.mock.calls[0][0];
+    expect(alertDeps.cronService).toBe(cronService);
+    expect(alertDeps.notifier).toBe(watchdogNotifier);
+    expect(alertDeps.isNotificationsEnabled()).toBe(true);
+    watchdog.getSettings.mockReturnValue({ notificationsEnabled: false });
+    expect(alertDeps.isNotificationsEnabled()).toBe(false);
+  });
+
+  it("does not let a failing cron-failure-alert scheduler break the boot sequence", () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const gmailWatchService = { start: vi.fn() };
+    const startCronFailureAlertScheduler = vi.fn(() => {
+      throw new Error("scheduler exploded");
+    });
+
+    expect(() =>
+      runOnboardedBootSequence({
+        runOpenclawDoctorMigration: vi.fn(() => ({ ran: false, ok: true })),
+        startCronFailureAlertScheduler,
+        cronService: { getBulkJobRuns: vi.fn() },
+        watchdogNotifier: { notify: vi.fn() },
+        ensureManagedExecDefaults: vi.fn(),
+        ensureUsageTrackerPluginConfig: vi.fn(),
+        ensureAcpAgentConfig: vi.fn(),
+        ensureGatewayProviderConfig: vi.fn(),
+        doSyncPromptFiles: vi.fn(),
+        reloadEnv: vi.fn(),
+        syncChannelConfig: vi.fn(),
+        readEnvFile: vi.fn(() => []),
+        ensureGatewayProxyConfig: vi.fn(),
+        resolveSetupUrl: vi.fn(() => "https://setup.example.com"),
+        startGateway: vi.fn(),
+        watchdog: { start: vi.fn(), getSettings: vi.fn(() => ({})) },
+        gmailWatchService,
+      }),
+    ).not.toThrow();
+
+    expect(gmailWatchService.start).toHaveBeenCalledTimes(1);
+    expect(
+      consoleSpy.mock.calls.some((call) =>
+        String(call[0]).includes("Failed to schedule cron failure alerting"),
+      ),
+    ).toBe(true);
+    consoleSpy.mockRestore();
   });
 });
 
