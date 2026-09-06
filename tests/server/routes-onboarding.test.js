@@ -7,9 +7,17 @@ const request = require("supertest");
 const { registerOnboardingRoutes } = require("../../lib/server/routes/onboarding");
 const { kSetupDir } = require("../../lib/server/constants");
 
-const createBaseDeps = ({ onboarded = false, hasCodexOauth = false } = {}) => {
+const createBaseDeps = ({
+  onboarded = false,
+  hasCodexOauth = false,
+  // Pinned so the exec-approvals version gate under test never depends on which
+  // OpenClaw happens to be installed in node_modules. 2026.8.1+ keeps exec
+  // approvals in SQLite; older releases keep the legacy JSON file.
+  openclawVersion = "2026.9.1",
+} = {}) => {
   const kOnboardingMarkerPath = "/tmp/alphaclaw/onboarded.json";
   return {
+    resolveOpenclawVersion: vi.fn(() => openclawVersion),
     fs: {
       mkdirSync: vi.fn(),
       existsSync: vi.fn((targetPath) =>
@@ -470,6 +478,53 @@ describe("server/routes/onboarding", () => {
     });
   });
 
+  describe("exec-approvals version gate", () => {
+    const runOnboarding = async (openclawVersion) => {
+      const deps = createBaseDeps({ openclawVersion });
+      const files = new Map([
+        ["/tmp/openclaw/openclaw.json", "{}"],
+        [path.join(kSetupDir, "core-prompts", "TOOLS.md"), "Setup: {{SETUP_UI_URL}}"],
+        [path.join(kSetupDir, "hourly-git-sync.sh"), "echo Auto-commit hourly sync"],
+      ]);
+      deps.fs.existsSync.mockImplementation((targetPath) => files.has(targetPath));
+      deps.fs.readFileSync.mockImplementation((targetPath) => files.get(targetPath) || "{}");
+      deps.fs.writeFileSync.mockImplementation((targetPath, contents) => {
+        files.set(targetPath, String(contents));
+      });
+      mockGithubVerifyAndCreate();
+      const res = await request(createApp(deps)).post("/api/onboard").send(makeValidBody());
+      expect(res.status).toBe(200);
+      return { deps, files };
+    };
+
+    it("writes the legacy exec-approvals.json on pre-2.0 OpenClaw", async () => {
+      const { deps, files } = await runOnboarding("2026.7.9");
+
+      expect(deps.resolveOpenclawVersion).toHaveBeenCalled();
+      const approvals = files.get("/tmp/openclaw/exec-approvals.json");
+      expect(approvals).toBeDefined();
+      expect(JSON.parse(approvals)).toMatchObject({
+        version: 1,
+        defaults: { security: "full", ask: "off", askFallback: "full" },
+      });
+      // Pre-2.0 also keeps the retired `tools.exec.security` knob.
+      expect(JSON.parse(files.get("/tmp/openclaw/openclaw.json")).tools.exec).toMatchObject({
+        security: "full",
+      });
+    });
+
+    it("does not write exec-approvals.json on 2.0+ OpenClaw (SQLite-backed)", async () => {
+      const { deps, files } = await runOnboarding("2026.9.1");
+
+      expect(deps.resolveOpenclawVersion).toHaveBeenCalled();
+      expect(files.get("/tmp/openclaw/exec-approvals.json")).toBeUndefined();
+      // 2.0 normalizes the pair into `tools.exec.mode` instead.
+      expect(JSON.parse(files.get("/tmp/openclaw/openclaw.json")).tools.exec).toMatchObject({
+        mode: "full",
+      });
+    });
+  });
+
   it("rejects onboarding when workspace repo already exists", async () => {
     const deps = createBaseDeps();
     deps.fs.readFileSync.mockImplementation((p) => {
@@ -744,9 +799,9 @@ describe("server/routes/onboarding", () => {
     expect(files.get("/tmp/openclaw/openclaw.json")).not.toContain(
       '"transformsDir"',
     );
-    // OpenClaw 2026.8.1+ keeps exec approvals in SQLite and treats a
-    // policy-bearing exec-approvals.json as a blocking legacy store, so
-    // onboarding must not write one (see exec-defaults-config version gate).
+    // Deps pin OpenClaw to 2026.9.1, which keeps exec approvals in SQLite and
+    // treats a policy-bearing exec-approvals.json as a blocking legacy store,
+    // so onboarding must not write one (see exec-defaults-config version gate).
     expect(files.get("/tmp/openclaw/exec-approvals.json")).toBeUndefined();
     expect(
       deps.shellCmd.mock.calls.some(([cmd]) =>

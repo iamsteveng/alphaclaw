@@ -2,6 +2,7 @@ const { runOnboardedBootSequence, ensureGbrainPersistentDbPath } = require("../.
 const { kRootDir } = require("../../lib/server/constants");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const childProcess = require("child_process");
 
 describe("server/startup", () => {
@@ -393,7 +394,10 @@ describe("runOpenclawUpgradeDoctor", () => {
     expect(opts.env).toEqual({ HOME: "/data" });
     expect(opts.timeout).toBeGreaterThanOrEqual(60000);
     expect(fsStub.writes).toEqual([
-      ["/data/.alphaclaw/openclaw-doctor-version", "2026.9.1\n"],
+      [
+        "/data/.alphaclaw/openclaw-doctor-version",
+        `${JSON.stringify({ version: "2026.9.1", status: "ok", failures: 0 }, null, 2)}\n`,
+      ],
     ]);
     expect(logger.lines.join("\n")).toContain("openclaw doctor --fix exited 0");
   });
@@ -454,11 +458,22 @@ describe("runOpenclawUpgradeDoctor", () => {
       logger,
     });
 
-    expect(result).toMatchObject({ ran: true, ok: false, code: 1 });
-    expect(fsStub.writes).toEqual([]);
+    expect(result).toMatchObject({ ran: true, ok: false, code: 1, failures: 1 });
+    // The marker is written on failure too, but only to carry the retry counter
+    // — its `status` keeps the version from counting as migrated.
+    expect(fsStub.writes.length).toBe(1);
+    const [markerPath, contents] = fsStub.writes[0];
+    expect(markerPath).toBe("/data/.alphaclaw/openclaw-doctor-version");
+    expect(JSON.parse(contents)).toMatchObject({
+      version: "2026.9.1",
+      status: "failed",
+      failures: 1,
+    });
+    expect(JSON.parse(contents).lastError).toContain("retained conflicting legacy JSON");
     const logged = logger.lines.join("\n");
     expect(logged).toContain("openclaw doctor --fix exited 1");
     expect(logged).toContain("retained conflicting legacy JSON");
+    expect(logged).toContain("attempt 1/3");
   });
 
   it("skips when the installed OpenClaw version cannot be resolved", () => {
@@ -495,5 +510,141 @@ describe("runOpenclawUpgradeDoctor", () => {
 
     expect(result).toMatchObject({ ran: false, reason: "error" });
     expect(logger.lines.join("\n")).toContain("non-fatal");
+  });
+});
+describe("runOpenclawUpgradeDoctor failure cap", () => {
+  const { runOpenclawUpgradeDoctor } = require("../../lib/server/startup");
+
+  let alphaclawDir;
+  let markerPath;
+
+  beforeEach(() => {
+    alphaclawDir = fs.mkdtempSync(path.join(os.tmpdir(), "alphaclaw-doctor-"));
+    markerPath = path.join(alphaclawDir, "openclaw-doctor-version");
+  });
+
+  afterEach(() => {
+    fs.rmSync(alphaclawDir, { recursive: true, force: true });
+  });
+
+  const createLogger = () => {
+    const lines = [];
+    return {
+      lines,
+      log: (line) => lines.push(String(line)),
+      error: (line) => lines.push(String(line)),
+    };
+  };
+
+  const failingExec = (message = "retained conflicting legacy JSON\n") =>
+    vi.fn(() => {
+      throw Object.assign(new Error("doctor failed"), {
+        status: 1,
+        stdout: "checking...\n",
+        stderr: message,
+      });
+    });
+
+  const boot = ({ execSyncImpl, openclawVersion = "2026.9.1", logger }) =>
+    runOpenclawUpgradeDoctor({
+      execSyncImpl,
+      markerPath,
+      openclawVersion,
+      env: {},
+      logger: logger || createLogger(),
+    });
+
+  const readMarker = () => JSON.parse(fs.readFileSync(markerPath, "utf8"));
+
+  it("increments the failure counter on each failed boot", () => {
+    const execSyncImpl = failingExec();
+
+    expect(boot({ execSyncImpl })).toMatchObject({ ran: true, ok: false, failures: 1 });
+    expect(readMarker()).toMatchObject({ version: "2026.9.1", status: "failed", failures: 1 });
+
+    expect(boot({ execSyncImpl })).toMatchObject({ ran: true, ok: false, failures: 2 });
+    expect(readMarker()).toMatchObject({ status: "failed", failures: 2 });
+
+    expect(execSyncImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("caps at three failed attempts and stops running doctor", () => {
+    const execSyncImpl = failingExec();
+
+    boot({ execSyncImpl });
+    boot({ execSyncImpl });
+    const third = boot({ execSyncImpl });
+
+    expect(third).toMatchObject({ ran: true, ok: false, failures: 3 });
+    expect(readMarker()).toMatchObject({ status: "failed", failures: 3 });
+    expect(execSyncImpl).toHaveBeenCalledTimes(3);
+
+    const logger = createLogger();
+    const fourth = boot({ execSyncImpl, logger });
+
+    expect(fourth).toMatchObject({
+      ran: false,
+      ok: false,
+      reason: "failure-cap",
+      version: "2026.9.1",
+      failures: 3,
+    });
+    // Still three: the capped boot never shells out.
+    expect(execSyncImpl).toHaveBeenCalledTimes(3);
+    const logged = logger.lines.join("\n");
+    expect(logged).toContain("openclaw doctor migration skipped: 3 failed attempts for 2026.9.1");
+    expect(logged).toContain("openclaw doctor --fix");
+    expect(logged).toContain(markerPath);
+  });
+
+  it("retries a newly installed version even after the previous one was capped", () => {
+    const failing = failingExec();
+    boot({ execSyncImpl: failing });
+    boot({ execSyncImpl: failing });
+    boot({ execSyncImpl: failing });
+    expect(readMarker()).toMatchObject({ version: "2026.9.1", failures: 3 });
+
+    const nextVersion = vi.fn(() => "All checks passed\n");
+    const result = boot({ execSyncImpl: nextVersion, openclawVersion: "2026.10.0" });
+
+    expect(nextVersion).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ran: true, ok: true, reason: "repaired" });
+    expect(readMarker()).toEqual({ version: "2026.10.0", status: "ok", failures: 0 });
+  });
+
+  it("resets the failure count when doctor finally succeeds", () => {
+    boot({ execSyncImpl: failingExec() });
+    boot({ execSyncImpl: failingExec() });
+    expect(readMarker()).toMatchObject({ status: "failed", failures: 2 });
+
+    const passing = vi.fn(() => "All checks passed\n");
+    expect(boot({ execSyncImpl: passing })).toMatchObject({ ran: true, ok: true, failures: 0 });
+    expect(readMarker()).toEqual({ version: "2026.9.1", status: "ok", failures: 0 });
+
+    // And the next boot short-circuits on the ok marker.
+    const afterSuccess = vi.fn(() => "");
+    expect(boot({ execSyncImpl: afterSuccess })).toMatchObject({ reason: "up-to-date" });
+    expect(afterSuccess).not.toHaveBeenCalled();
+  });
+
+  it("honours a legacy plain-text marker as a completed migration", () => {
+    fs.writeFileSync(markerPath, "2026.9.1\n", "utf8");
+    const execSyncImpl = vi.fn(() => "");
+
+    const result = boot({ execSyncImpl });
+
+    expect(result).toEqual({ ran: false, ok: true, reason: "up-to-date", version: "2026.9.1" });
+    expect(execSyncImpl).not.toHaveBeenCalled();
+    // Untouched — a legacy marker is not rewritten just to change format.
+    expect(fs.readFileSync(markerPath, "utf8")).toBe("2026.9.1\n");
+  });
+
+  it("re-runs doctor when a legacy plain-text marker names an older version", () => {
+    fs.writeFileSync(markerPath, "2026.7.9\n", "utf8");
+    const execSyncImpl = vi.fn(() => "ok");
+
+    expect(boot({ execSyncImpl })).toMatchObject({ ran: true, ok: true, reason: "repaired" });
+    expect(execSyncImpl).toHaveBeenCalledTimes(1);
+    expect(readMarker()).toEqual({ version: "2026.9.1", status: "ok", failures: 0 });
   });
 });
