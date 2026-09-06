@@ -41,6 +41,20 @@ _Avoid_: hardcoded models, defaults
 A model given a shortcut chip in the model picker. A Featured Model is identified by its model key alone; its Auth Method is never part of its label.
 _Avoid_: recommended model, quick pick
 
+### OpenClaw Runtime
+
+**Pinned Version**:
+The OpenClaw version recorded in the repo lockfile. It is the version every deployment is built from; changing it is a code change.
+_Avoid_: installed version, current version
+
+**Runtime Update**:
+An in-place OpenClaw install performed from the dashboard on a running instance. It lasts only until the next build from the Pinned Version.
+_Avoid_: upgrade, hot update
+
+**Release Channel**:
+The OpenClaw distribution stream an instance follows when checking for updates: stable, extended-stable, or beta.
+_Avoid_: tag, track
+
 ### Trading (existing ecosystem)
 
 **Trading Plan**:

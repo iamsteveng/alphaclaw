@@ -1,4 +1,4 @@
-FROM node:22-slim
+FROM node:22.23-slim
 
 RUN apt-get update && apt-get install -y git curl procps python3 make g++ cron tini jq && rm -rf /var/lib/apt/lists/*
 
