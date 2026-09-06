@@ -185,6 +185,11 @@ Prod runs `openai/gpt-5.4` and delivers cron output to **Discord** (not Telegram
 | Variable | Description |
 |---|---|
 | `WATCHDOG_AUTO_REPAIR` | Auto-restart the gateway on crash/unhealthy detection. Defaults to `true` in code — set to `false` to opt out on a specific deployment. |
+| `CODEX_LOG_RETENTION_DAYS` | Retention window for the Codex debug-log prune. Default `3`. |
+| `CODEX_LOG_PRUNE_INTERVAL_HOURS` | How often the prune sweep runs. Default `24`. |
+| `CODEX_LOG_PRUNE_ENABLED` | Set to `false` to disable the prune entirely. Default `true`. |
+
+**Codex debug-log pruning:** the Codex app-server writes an unbounded debug log to `~/.openclaw/agents/<agentId>/agent/codex-home/logs_2.sqlite` (~130 MB/day, no Codex-side retention setting), which fills the 5 GB volume in under two weeks. `lib/server/codex-log-prune.js` sweeps every agent's log DB ~2 minutes after boot and then every `CODEX_LOG_PRUNE_INTERVAL_HOURS`: it deletes rows older than `CODEX_LOG_RETENTION_DAYS` (default 3), truncates the WAL, and VACUUMs (followed by a second WAL truncate) only when the freelist holds more than 64 MB of reclaimable space. Sweeps never throw — a busy or unreadable DB is logged and retried on the next tick — and the last run is reported at `GET /api/status` under `maintenance.codexLogPrune`.
 
 **Note:** Railway's Trial plan can cause OOM crashes — Hobby plan (8 GB RAM) is required for stable operation.
 
