@@ -125,7 +125,7 @@ describe("server/codex-log-prune", () => {
   });
 
   describe("pruneCodexLogDatabase", () => {
-    it("deletes rows older than the retention window and keeps newer rows", () => {
+    it("deletes rows older than the retention window and keeps newer rows", async () => {
       const dbPath = makeCodexLogDb(openclawDir);
       const now = Date.UTC(2026, 8, 5, 12, 0, 0);
       const nowSeconds = Math.floor(now / 1000);
@@ -139,7 +139,7 @@ describe("server/codex-log-prune", () => {
       db.close();
 
       const logger = silentLogger();
-      const result = pruneCodexLogDatabase({
+      const result = await pruneCodexLogDatabase({
         dbPath,
         retentionDays: 3,
         now,
@@ -165,7 +165,7 @@ describe("server/codex-log-prune", () => {
       expect(logger.log.mock.calls[0][0]).toContain("reclaimable");
     });
 
-    it("vacuums and shrinks the file when the delete frees more than the threshold", () => {
+    it("vacuums and shrinks the file when the delete frees more than the threshold", async () => {
       const dbPath = makeCodexLogDb(openclawDir);
       const now = Date.UTC(2026, 8, 5, 12, 0, 0);
       const nowSeconds = Math.floor(now / 1000);
@@ -182,7 +182,7 @@ describe("server/codex-log-prune", () => {
       const bytesBefore = fs.statSync(dbPath).size;
       expect(bytesBefore).toBeGreaterThan(1024 * 1024);
 
-      const result = pruneCodexLogDatabase({
+      const result = await pruneCodexLogDatabase({
         dbPath,
         retentionDays: 3,
         vacuumSlackThresholdBytes: 512 * 1024,
@@ -197,7 +197,7 @@ describe("server/codex-log-prune", () => {
       expect(rowCount(dbPath)).toBe(10);
     });
 
-    it("truncates the WAL after vacuuming so the rebuild does not sit in -wal", () => {
+    it("truncates the WAL after vacuuming so the rebuild does not sit in -wal", async () => {
       const dbPath = makeCodexLogDb(openclawDir);
       const now = Date.UTC(2026, 8, 5, 12, 0, 0);
       const nowSeconds = Math.floor(now / 1000);
@@ -209,7 +209,7 @@ describe("server/codex-log-prune", () => {
       seedRows(db, { count: 10, ts: nowSeconds, bodyBytes: 1024 });
       db.close();
 
-      const result = pruneCodexLogDatabase({
+      const result = await pruneCodexLogDatabase({
         dbPath,
         retentionDays: 3,
         vacuumSlackThresholdBytes: 512 * 1024,
@@ -223,7 +223,7 @@ describe("server/codex-log-prune", () => {
       expect(walBytes).toBe(0);
     });
 
-    it("does not vacuum a large file with little reclaimable slack", () => {
+    it("does not vacuum a large file with little reclaimable slack", async () => {
       const dbPath = makeCodexLogDb(openclawDir);
       const now = Date.UTC(2026, 8, 5, 12, 0, 0);
       const nowSeconds = Math.floor(now / 1000);
@@ -240,7 +240,7 @@ describe("server/codex-log-prune", () => {
       const bytesBefore = fs.statSync(dbPath).size;
       expect(bytesBefore).toBeGreaterThan(1024 * 1024);
 
-      const result = pruneCodexLogDatabase({
+      const result = await pruneCodexLogDatabase({
         dbPath,
         retentionDays: 3,
         vacuumSlackThresholdBytes: 512 * 1024,
@@ -254,7 +254,7 @@ describe("server/codex-log-prune", () => {
       expect(rowCount(dbPath)).toBe(2000);
     });
 
-    it("does not vacuum when the freed space is below the threshold", () => {
+    it("does not vacuum when the freed space is below the threshold", async () => {
       const dbPath = makeCodexLogDb(openclawDir);
       const now = Date.now();
       const db = new DatabaseSync(dbPath);
@@ -262,7 +262,7 @@ describe("server/codex-log-prune", () => {
       seedRows(db, { count: 5, ts: Math.floor(now / 1000) - 30 * kDay });
       db.close();
 
-      const result = pruneCodexLogDatabase({
+      const result = await pruneCodexLogDatabase({
         dbPath,
         retentionDays: 3,
         vacuumSlackThresholdBytes: 64 * 1024 * 1024,
@@ -274,29 +274,484 @@ describe("server/codex-log-prune", () => {
       expect(result.vacuumed).toBe(false);
     });
 
-    it("skips a file it cannot open without throwing", () => {
+    it("deletes everything across multiple batches and reports the total", async () => {
+      const dbPath = makeCodexLogDb(openclawDir);
+      const now = Date.UTC(2026, 8, 5, 12, 0, 0);
+      const nowSeconds = Math.floor(now / 1000);
+
+      const db = new DatabaseSync(dbPath);
+      createCodexLogSchema(db);
+      db.exec("PRAGMA journal_mode = WAL");
+      seedRows(db, { count: 50, ts: nowSeconds - 10 * kDay }); // old
+      seedRows(db, { count: 7, ts: nowSeconds }); // keep
+      db.close();
+
+      const logger = silentLogger();
+      const yieldImpl = vi.fn(() => Promise.resolve());
+      const result = await pruneCodexLogDatabase({
+        dbPath,
+        retentionDays: 3,
+        batchRows: 10,
+        now,
+        logger,
+        yieldImpl,
+      });
+
+      expect(result.status).toBe("ok");
+      expect(result.capped).toBe(false);
+      expect(result.deleted).toBe(50);
+      expect(result.batches).toBe(5);
+      expect(rowCount(dbPath)).toBe(7);
+      // One yield after every batch that deleted something — the loop hands the
+      // event loop back so the dashboard and watchdog keep responding during a
+      // long sweep instead of freezing for its whole duration.
+      expect(yieldImpl).toHaveBeenCalledTimes(5);
+      expect(logger.log.mock.calls[0][0]).toContain("deleted 50 rows");
+      expect(logger.log.mock.calls[0][0]).toContain("5 batch(es)");
+    });
+
+    it("keeps the WAL bounded to a single batch while deleting", async () => {
+      const dbPath = makeCodexLogDb(openclawDir);
+      const now = Date.UTC(2026, 8, 5, 12, 0, 0);
+      const nowSeconds = Math.floor(now / 1000);
+
+      const db = new DatabaseSync(dbPath);
+      createCodexLogSchema(db);
+      db.exec("PRAGMA journal_mode = WAL");
+      seedRows(db, { count: 400, ts: nowSeconds - 10 * kDay, bodyBytes: 1024 });
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      db.close();
+
+      const walPath = `${dbPath}-wal`;
+      let peakWalBytes = 0;
+      const yieldImpl = vi.fn(() => {
+        const bytes = fs.existsSync(walPath) ? fs.statSync(walPath).size : 0;
+        peakWalBytes = Math.max(peakWalBytes, bytes);
+        return Promise.resolve();
+      });
+
+      const result = await pruneCodexLogDatabase({
+        dbPath,
+        retentionDays: 3,
+        batchRows: 20,
+        // Keep VACUUM out of this measurement.
+        vacuumSlackThresholdBytes: Number.MAX_SAFE_INTEGER,
+        now,
+        logger: silentLogger(),
+        yieldImpl,
+      });
+
+      expect(result.deleted).toBe(400);
+      expect(result.batches).toBe(20);
+      // Every batch is checkpointed with TRUNCATE, so the sidecar is empty
+      // between batches instead of accumulating the whole delete.
+      expect(peakWalBytes).toBe(0);
+    });
+
+    it("stops the sweep when a concurrent reader pins the WAL", async () => {
+      const dbPath = makeCodexLogDb(openclawDir);
+      const now = Date.UTC(2026, 8, 5, 12, 0, 0);
+      const nowSeconds = Math.floor(now / 1000);
+
+      const db = new DatabaseSync(dbPath);
+      createCodexLogSchema(db);
+      db.exec("PRAGMA journal_mode = WAL");
+      seedRows(db, { count: 400, ts: nowSeconds - 10 * kDay, bodyBytes: 1024 });
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      db.close();
+
+      // A second connection holding an open read transaction — exactly what the
+      // Codex app-server does while tailing its own log. For as long as it
+      // lives, `PRAGMA wal_checkpoint(TRUNCATE)` returns busy=1 without
+      // throwing, so a sweep that ignores the result keeps deleting while the
+      // WAL grows by a batch per iteration.
+      const reader = new DatabaseSync(dbPath);
+      reader.exec("PRAGMA busy_timeout = 0");
+      reader.exec("BEGIN");
+      reader.prepare("SELECT count(*) AS n FROM logs").get();
+
+      const logger = silentLogger();
+      let result;
+      try {
+        result = await pruneCodexLogDatabase({
+          dbPath,
+          retentionDays: 3,
+          batchRows: 20,
+          busyTimeoutMs: 0,
+          // VACUUM would otherwise be eligible — the guard must suppress it.
+          vacuumSlackThresholdBytes: 0,
+          now,
+          logger,
+        });
+      } finally {
+        try {
+          reader.exec("ROLLBACK");
+        } catch {
+          // Already rolled back.
+        }
+        reader.close();
+      }
+
+      expect(result.capped).toBe(true);
+      expect(result.walStuck).toBe(true);
+      expect(result.reason).toContain("wal-not-truncating");
+      expect(result.vacuumed).toBe(false);
+      // Bailed after the first batch instead of pushing the whole 400-row
+      // delete into -wal.
+      expect(result.batches).toBe(1);
+      expect(result.deleted).toBe(20);
+      expect(rowCount(dbPath)).toBe(380);
+
+      const walBytes = fs.existsSync(`${dbPath}-wal`)
+        ? fs.statSync(`${dbPath}-wal`).size
+        : 0;
+      // Ceiling plus at most one batch's worth of pages.
+      expect(walBytes).toBeLessThan(64 * 1024 * 1024 + 20 * 1024 * 8);
+
+      const warnings = logger.warn.mock.calls.map((call) => call[0]);
+      expect(warnings.some((line) => line.includes("WAL is not truncating"))).toBe(
+        true,
+      );
+      expect(
+        warnings.some((line) => line.includes(`${result.walBytes} bytes`)),
+      ).toBe(true);
+    });
+
+    it("never fires the WAL guard when nothing is holding the WAL", async () => {
+      const dbPath = makeCodexLogDb(openclawDir);
+      const now = Date.UTC(2026, 8, 5, 12, 0, 0);
+      const nowSeconds = Math.floor(now / 1000);
+
+      const db = new DatabaseSync(dbPath);
+      createCodexLogSchema(db);
+      db.exec("PRAGMA journal_mode = WAL");
+      seedRows(db, { count: 400, ts: nowSeconds - 10 * kDay, bodyBytes: 1024 });
+      seedRows(db, { count: 5, ts: nowSeconds, bodyBytes: 1024 });
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      db.close();
+
+      const logger = silentLogger();
+      const result = await pruneCodexLogDatabase({
+        dbPath,
+        retentionDays: 3,
+        batchRows: 20,
+        busyTimeoutMs: 0,
+        vacuumSlackThresholdBytes: Number.MAX_SAFE_INTEGER,
+        now,
+        logger,
+      });
+
+      expect(result.walStuck).toBe(false);
+      expect(result.capped).toBe(false);
+      expect(result.deleted).toBe(400);
+      expect(result.batches).toBe(20);
+      expect(result.walBytes).toBe(0);
+      expect(rowCount(dbPath)).toBe(5);
+      expect(
+        logger.warn.mock.calls.some((call) =>
+          call[0].includes("not truncating"),
+        ),
+      ).toBe(false);
+    });
+
+    it("stops when the -wal file is over the ceiling despite a clean checkpoint", async () => {
+      const dbPath = makeCodexLogDb(openclawDir);
+      const now = Date.UTC(2026, 8, 5, 12, 0, 0);
+      const nowSeconds = Math.floor(now / 1000);
+
+      const db = new DatabaseSync(dbPath);
+      createCodexLogSchema(db);
+      db.exec("PRAGMA journal_mode = WAL");
+      seedRows(db, { count: 50, ts: nowSeconds - 10 * kDay });
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      db.close();
+
+      // The size half of the guard: a checkpoint that reports success but
+      // leaves a huge sidecar behind is still a WAL that is not draining.
+      const walPath = `${dbPath}-wal`;
+      const fsModule = Object.assign({}, fs, {
+        statSync: (target, ...rest) =>
+          target === walPath
+            ? { size: 200 * 1024 * 1024, isFile: () => true }
+            : fs.statSync(target, ...rest),
+      });
+
+      const logger = silentLogger();
+      const result = await pruneCodexLogDatabase({
+        dbPath,
+        retentionDays: 3,
+        batchRows: 10,
+        walCeilingBytes: 64 * 1024 * 1024,
+        now,
+        logger,
+        fsModule,
+      });
+
+      expect(result.capped).toBe(true);
+      expect(result.walStuck).toBe(true);
+      expect(result.walBytes).toBe(200 * 1024 * 1024);
+      expect(result.reason).toContain("wal-not-truncating");
+      expect(result.batches).toBe(1);
+      expect(result.deleted).toBe(10);
+      expect(rowCount(dbPath)).toBe(40);
+    });
+
+    it("stops at the batch cap and reports partial progress", async () => {
+      const dbPath = makeCodexLogDb(openclawDir);
+      const now = Date.UTC(2026, 8, 5, 12, 0, 0);
+      const nowSeconds = Math.floor(now / 1000);
+
+      const db = new DatabaseSync(dbPath);
+      createCodexLogSchema(db);
+      seedRows(db, { count: 50, ts: nowSeconds - 10 * kDay });
+      seedRows(db, { count: 7, ts: nowSeconds });
+      db.close();
+
+      const logger = silentLogger();
+      const result = await pruneCodexLogDatabase({
+        dbPath,
+        retentionDays: 3,
+        batchRows: 10,
+        maxBatches: 2,
+        now,
+        logger,
+      });
+
+      expect(result.status).toBe("ok");
+      expect(result.capped).toBe(true);
+      expect(result.deleted).toBe(20);
+      expect(result.batches).toBe(2);
+      expect(result.reason).toContain("batch cap reached");
+      // 30 old rows survive this tick and are picked up by the next one.
+      expect(rowCount(dbPath)).toBe(37);
+      expect(logger.warn.mock.calls[0][0]).toContain("stopped early");
+    });
+
+    it("stops when the wall-clock budget is exhausted", async () => {
+      const dbPath = makeCodexLogDb(openclawDir);
+      const now = Date.UTC(2026, 8, 5, 12, 0, 0);
+      const nowSeconds = Math.floor(now / 1000);
+
+      const db = new DatabaseSync(dbPath);
+      createCodexLogSchema(db);
+      seedRows(db, { count: 50, ts: nowSeconds - 10 * kDay });
+      db.close();
+
+      // Fake clock: the first reading sets the deadline, the second (taken after
+      // batch one) is already past it.
+      const readings = [0, 5000];
+      let readIndex = 0;
+      const monotonicNow = () =>
+        readings[Math.min(readIndex++, readings.length - 1)];
+
+      const logger = silentLogger();
+      const result = await pruneCodexLogDatabase({
+        dbPath,
+        retentionDays: 3,
+        batchRows: 10,
+        maxSweepMs: 1000,
+        now,
+        logger,
+        monotonicNow,
+      });
+
+      expect(result.capped).toBe(true);
+      expect(result.batches).toBe(1);
+      expect(result.deleted).toBe(10);
+      expect(result.reason).toContain("time budget reached");
+      expect(rowCount(dbPath)).toBe(40);
+    });
+
+    it("classifies a full volume as disk-full, not busy", async () => {
+      const dbPath = makeCodexLogDb(openclawDir);
+      const now = Date.UTC(2026, 8, 5, 12, 0, 0);
+      const nowSeconds = Math.floor(now / 1000);
+
+      const db = new DatabaseSync(dbPath);
+      createCodexLogSchema(db);
+      seedRows(db, { count: 20, ts: nowSeconds - 10 * kDay });
+      db.close();
+
+      // The prod failure: the DELETE cannot fit its pages in the WAL because
+      // the volume is already full. SQLite reports SQLITE_FULL, which the first
+      // implementation mislabelled as "busy".
+      const openDatabase = (target) => {
+        const real = new DatabaseSync(target);
+        return {
+          exec: (...args) => real.exec(...args),
+          close: () => real.close(),
+          prepare: (sql) => {
+            if (sql.startsWith("DELETE FROM logs")) {
+              return {
+                run: () => {
+                  throw new Error("database or disk is full");
+                },
+              };
+            }
+            return real.prepare(sql);
+          },
+        };
+      };
+
+      const logger = silentLogger();
+      const result = await pruneCodexLogDatabase({
+        dbPath,
+        retentionDays: 3,
+        now,
+        logger,
+        openDatabase,
+      });
+
+      expect(result.status).toBe("skipped");
+      expect(result.skipKind).toBe("disk-full");
+      expect(result.reason).toBe("database or disk is full");
+      expect(result.deleted).toBe(0);
+      expect(logger.warn).toHaveBeenCalled();
+      const warning = logger.warn.mock.calls.at(-1)[0];
+      expect(warning).toContain("disk-full");
+      expect(warning).not.toContain("(busy,");
+      expect(warning).toContain("database or disk is full");
+      // Rows survive for the next tick.
+      expect(rowCount(dbPath)).toBe(20);
+    });
+
+    it("still classifies a locked database as busy", async () => {
+      const dbPath = makeCodexLogDb(openclawDir);
+      const now = Date.UTC(2026, 8, 5, 12, 0, 0);
+      const nowSeconds = Math.floor(now / 1000);
+
+      const db = new DatabaseSync(dbPath);
+      createCodexLogSchema(db);
+      seedRows(db, { count: 5, ts: nowSeconds - 10 * kDay });
+      db.close();
+
+      const openDatabase = (target) => {
+        const real = new DatabaseSync(target);
+        return {
+          exec: (...args) => real.exec(...args),
+          close: () => real.close(),
+          prepare: (sql) => {
+            if (sql.startsWith("DELETE FROM logs")) {
+              return {
+                run: () => {
+                  throw new Error("database is locked");
+                },
+              };
+            }
+            return real.prepare(sql);
+          },
+        };
+      };
+
+      const logger = silentLogger();
+      const result = await pruneCodexLogDatabase({
+        dbPath,
+        retentionDays: 3,
+        now,
+        logger,
+        openDatabase,
+      });
+
+      expect(result.status).toBe("skipped");
+      expect(result.skipKind).toBe("busy");
+      expect(logger.warn.mock.calls.at(-1)[0]).toContain("(busy,");
+    });
+
+    it("skips VACUUM when the volume has too little free space for the rebuild", async () => {
+      const dbPath = makeCodexLogDb(openclawDir);
+      const now = Date.UTC(2026, 8, 5, 12, 0, 0);
+      const nowSeconds = Math.floor(now / 1000);
+
+      const db = new DatabaseSync(dbPath);
+      createCodexLogSchema(db);
+      seedRows(db, { count: 2000, ts: nowSeconds - 30 * kDay, bodyBytes: 1024 });
+      seedRows(db, { count: 10, ts: nowSeconds, bodyBytes: 1024 });
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      db.close();
+
+      const bytesOnDisk = fs.statSync(dbPath).size;
+      const logger = silentLogger();
+      // VACUUM rebuilds through the WAL on the same volume; 4 KB is nowhere
+      // near enough, so the rewrite must not be attempted.
+      const freeSpaceBytes = vi.fn(() => 4096);
+
+      const result = await pruneCodexLogDatabase({
+        dbPath,
+        retentionDays: 3,
+        vacuumSlackThresholdBytes: 512 * 1024,
+        vacuumFreeSpaceMarginBytes: 1024 * 1024,
+        now,
+        logger,
+        freeSpaceBytes,
+      });
+
+      expect(result.deleted).toBe(2000);
+      expect(result.slackBytes).toBeGreaterThan(512 * 1024);
+      expect(result.vacuumed).toBe(false);
+      expect(freeSpaceBytes).toHaveBeenCalledWith(dbPath, fs);
+      expect(result.reason).toContain("vacuum skipped");
+      expect(result.reason).toContain("4096 bytes free");
+      expect(
+        logger.warn.mock.calls.some((call) =>
+          call[0].includes("insufficient free space"),
+        ),
+      ).toBe(true);
+      // The file was left alone, not rewritten.
+      expect(fs.statSync(dbPath).size).toBe(bytesOnDisk);
+    });
+
+    it("vacuums when free space is unknown (statfs unavailable)", async () => {
+      const dbPath = makeCodexLogDb(openclawDir);
+      const now = Date.UTC(2026, 8, 5, 12, 0, 0);
+      const nowSeconds = Math.floor(now / 1000);
+
+      const db = new DatabaseSync(dbPath);
+      createCodexLogSchema(db);
+      seedRows(db, { count: 2000, ts: nowSeconds - 30 * kDay, bodyBytes: 1024 });
+      seedRows(db, { count: 10, ts: nowSeconds, bodyBytes: 1024 });
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      db.close();
+
+      const result = await pruneCodexLogDatabase({
+        dbPath,
+        retentionDays: 3,
+        vacuumSlackThresholdBytes: 512 * 1024,
+        now,
+        logger: silentLogger(),
+        freeSpaceBytes: () => null,
+      });
+
+      expect(result.vacuumed).toBe(true);
+    });
+
+    it("skips a file it cannot open without rejecting", async () => {
       const dbPath = makeCodexLogDb(openclawDir);
       fs.writeFileSync(dbPath, "this is not a sqlite database at all");
 
       const logger = silentLogger();
-      let result;
-      expect(() => {
-        result = pruneCodexLogDatabase({ dbPath, retentionDays: 3, logger });
-      }).not.toThrow();
+      const result = await pruneCodexLogDatabase({
+        dbPath,
+        retentionDays: 3,
+        logger,
+      });
 
       expect(result.status).toBe("skipped");
       expect(result.deleted).toBe(0);
       expect(logger.warn).toHaveBeenCalled();
     });
 
-    it("skips a database with no logs table without throwing", () => {
+    it("skips a database with no logs table without throwing", async () => {
       const dbPath = makeCodexLogDb(openclawDir);
       const db = new DatabaseSync(dbPath);
       db.exec("CREATE TABLE unrelated (id INTEGER PRIMARY KEY)");
       db.close();
 
       const logger = silentLogger();
-      const result = pruneCodexLogDatabase({ dbPath, retentionDays: 3, logger });
+      const result = await pruneCodexLogDatabase({
+        dbPath,
+        retentionDays: 3,
+        logger,
+      });
 
       expect(result.status).toBe("skipped");
       expect(result.reason).toBe("no logs table");
@@ -305,7 +760,7 @@ describe("server/codex-log-prune", () => {
   });
 
   describe("runCodexLogPrune", () => {
-    it("sweeps every agent database and records the last run", () => {
+    it("sweeps every agent database and records the last run", async () => {
       const now = Date.UTC(2026, 8, 5, 12, 0, 0);
       const nowSeconds = Math.floor(now / 1000);
 
@@ -321,7 +776,7 @@ describe("server/codex-log-prune", () => {
       const brokenPath = makeCodexLogDb(openclawDir, "broken");
       fs.writeFileSync(brokenPath, "corrupt");
 
-      const summary = runCodexLogPrune({
+      const summary = await runCodexLogPrune({
         openclawDir,
         retentionDays: 3,
         now,
@@ -341,7 +796,7 @@ describe("server/codex-log-prune", () => {
       );
     });
 
-    it("never throws when discovery itself fails", () => {
+    it("never rejects when discovery itself fails", async () => {
       const fsModule = {
         readdirSync: () => {
           throw new Error("EIO");
@@ -350,10 +805,7 @@ describe("server/codex-log-prune", () => {
       };
 
       const logger = silentLogger();
-      let summary;
-      expect(() => {
-        summary = runCodexLogPrune({ openclawDir, fsModule, logger });
-      }).not.toThrow();
+      const summary = await runCodexLogPrune({ openclawDir, fsModule, logger });
       expect(summary.databases).toBe(0);
       expect(summary.results).toEqual([]);
     });
@@ -429,6 +881,25 @@ describe("server/codex-log-prune", () => {
 
       expect(() => setTimeoutImpl.mock.calls[0][0]()).not.toThrow();
       expect(logger.error).toHaveBeenCalled();
+    });
+
+    it("logs a rejected async sweep instead of leaking an unhandled rejection", async () => {
+      const setTimeoutImpl = vi.fn(() => ({ unref: vi.fn() }));
+      const setIntervalImpl = vi.fn(() => ({ unref: vi.fn() }));
+      const logger = silentLogger();
+
+      startCodexLogPrune({
+        enabled: true,
+        logger,
+        setTimeoutImpl,
+        setIntervalImpl,
+        runPrune: () => Promise.reject(new Error("async boom")),
+      });
+
+      expect(() => setTimeoutImpl.mock.calls[0][0]()).not.toThrow();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(logger.error).toHaveBeenCalled();
+      expect(logger.error.mock.calls[0][0]).toContain("async boom");
     });
   });
 
