@@ -102,6 +102,9 @@ describe("server/helpers", () => {
       { key: "openai-codex/gpt-5.4", provider: "openai-codex", label: "GPT-5.4" },
       { key: "openai-codex/gpt-5.4-mini", provider: "openai-codex", label: "GPT-5.4 Mini" },
       { key: "openai-codex/gpt-5.5", provider: "openai-codex", label: "GPT-5.5" },
+      { key: "openai-codex/gpt-5.6-luna", provider: "openai-codex", label: "GPT-5.6 Luna" },
+      { key: "openai-codex/gpt-5.6-sol", provider: "openai-codex", label: "GPT-5.6 Sol" },
+      { key: "openai-codex/gpt-5.6-terra", provider: "openai-codex", label: "GPT-5.6 Terra" },
       {
         key: "openai/gpt-5.1-codex",
         provider: "openai",
@@ -113,6 +116,23 @@ describe("server/helpers", () => {
         label: "GLM 5",
       },
     ]);
+  });
+
+  it("injects the GPT-5.6 codex tiers even when the live list has none", () => {
+    const normalized = normalizeOnboardingModels([
+      { key: "openai/gpt-5.6-sol", name: "GPT-5.6 Sol" },
+    ]);
+    const byKey = new Map(normalized.map((model) => [model.key, model]));
+
+    expect(byKey.get("openai-codex/gpt-5.6-sol")).toEqual({
+      key: "openai-codex/gpt-5.6-sol",
+      provider: "openai-codex",
+      label: "GPT-5.6 Sol",
+    });
+    expect(byKey.get("openai-codex/gpt-5.6-terra")?.label).toBe("GPT-5.6 Terra");
+    expect(byKey.get("openai-codex/gpt-5.6-luna")?.label).toBe("GPT-5.6 Luna");
+    // the API-key path survives alongside the subscription-OAuth picker key
+    expect(byKey.get("openai/gpt-5.6-sol")?.provider).toBe("openai");
   });
 
   describe("normalizeCodexModelKey", () => {

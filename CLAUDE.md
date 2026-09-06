@@ -65,6 +65,9 @@ The frontend uses Preact with `htm` (tagged template literals, no build-time JSX
 - `lib/server/constants.js` contains all file paths, ports, OAuth constants, and feature flags. Add new constants here rather than inline in route files.
 - The `authProfiles` object (from `auth-profiles.js`) is injected into route modules that need to read/write OAuth credentials.
 - File-based state (auth state, credentials) lives under `ALPHACLAW_ROOT_DIR`; DB-backed state lives in `lib/server/db/`.
+- `lib/server/model-catalog-bootstrap.json` (the bundled model catalog served before the live catalog loads) is regenerated from a **running** instance's `/api/models` response — equivalently `HOME=/data openclaw models list --all --json` inside the container — not from a local `openclaw` install: on OpenClaw 2.0 the catalog depends on which provider plugins are enabled on that instance.
+- Keep it sorted by key, and keep the `openai-codex/` picker keys: `normalizeOnboardingModels` (`lib/server/helpers.js`) re-injects them into every live refresh, because OpenClaw normalises those models back to `openai/`.
+- Also keep the featured non-OpenAI keys (`kFeaturedModelDefs` in `lib/public/js/lib/model-config.js`) in the file even when the live instance does not serve them — the welcome step preselects the first resolvable featured chip from the bootstrap and never replaces it once `MODEL_KEY` is set, so dropping them makes a fresh install preselect GPT-5.5 instead of Opus.
 
 ## Local Container Testing
 

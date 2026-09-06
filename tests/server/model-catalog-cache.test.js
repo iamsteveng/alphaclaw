@@ -46,13 +46,20 @@ describe("server/model-catalog-cache", () => {
     vi.useRealTimers();
   });
 
-  it("ships a full bootstrap model catalog for cold starts", () => {
-    expect(kFallbackOnboardingModels.length).toBeGreaterThan(100);
+  // The bootstrap catalog mirrors the live instance's enabled provider
+  // plugins, so it is far smaller than a "every model OpenClaw knows" dump —
+  // assert it is a real catalog, not that it holds any particular vendor.
+  it("ships the bundled bootstrap model catalog for cold starts", () => {
+    expect(kFallbackOnboardingModels.length).toBeGreaterThan(50);
     expect(kFallbackOnboardingModels).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          key: "anthropic/claude-opus-4-7",
-          label: "Claude Opus 4.7",
+          key: "openai-codex/gpt-5.6-sol",
+          label: "GPT-5.6 Sol",
+        }),
+        expect.objectContaining({
+          key: "openai/gpt-5.6-sol",
+          label: "GPT-5.6 Sol",
         }),
       ]),
     );
