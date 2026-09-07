@@ -10,6 +10,10 @@ const readJson = (relPath) =>
     fs.readFileSync(path.join(tmpDir, ".openclaw", relPath), "utf8"),
   );
 
+const kLegacyStoreRelPath = "agents/main/agent/auth-profiles.json";
+const legacyStoreExists = () =>
+  fs.existsSync(path.join(tmpDir, ".openclaw", kLegacyStoreRelPath));
+
 beforeAll(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ac-auth-test-"));
   process.env.ALPHACLAW_ROOT_DIR = tmpDir;
@@ -140,8 +144,9 @@ describe("server/auth-profiles", () => {
 
     ap.removeProfile("google:default");
 
-    const store = readJson("agents/main/agent/auth-profiles.json");
-    expect(store.profiles["google:default"]).toBeUndefined();
+    // It was the only profile, so the store file is deleted rather than left
+    // behind empty — OpenClaw refuses its auth store on this file's existence.
+    expect(legacyStoreExists()).toBe(false);
 
     config = readJson("openclaw.json");
     expect(config.auth?.profiles?.["google:default"]).toBeUndefined();
@@ -388,23 +393,49 @@ describe("server/auth-profiles", () => {
     expect(config.auth.profiles["openai-codex:codex-cli"].mode).toBe("oauth");
   });
 
-  it("legacy removeCodexProfiles removes all codex profiles", () => {
+  it("legacy removeCodexProfiles deletes the store file when nothing is left", () => {
     ap.upsertCodexProfile({
       access: "jwt",
       refresh: "rt",
       expires: 1,
     });
 
-    let store = readJson("agents/main/agent/auth-profiles.json");
+    const store = readJson(kLegacyStoreRelPath);
     expect(store.profiles["openai-codex:codex-cli"]).toBeDefined();
 
     ap.removeCodexProfiles();
 
-    store = readJson("agents/main/agent/auth-profiles.json");
-    expect(store.profiles["openai-codex:codex-cli"]).toBeUndefined();
+    // OpenClaw refuses its whole auth store while this file exists, whatever it
+    // contains — an emptied store must be deleted, not written back as
+    // {"version":1,"profiles":{}}.
+    expect(legacyStoreExists()).toBe(false);
 
     const config = readJson("openclaw.json");
     expect(config.auth?.profiles?.["openai-codex:codex-cli"]).toBeUndefined();
+  });
+
+  it("keeps the store file when a real credential remains after a removal", () => {
+    ap.upsertCodexProfile({
+      access: "jwt",
+      refresh: "rt",
+      expires: 1,
+    });
+    ap.upsertProfile("anthropic:default", {
+      type: "api_key",
+      provider: "anthropic",
+      key: "sk-ant-keep-me",
+    });
+
+    ap.removeCodexProfiles();
+
+    expect(legacyStoreExists()).toBe(true);
+    const store = readJson(kLegacyStoreRelPath);
+    expect(store.profiles["openai-codex:codex-cli"]).toBeUndefined();
+    expect(store.profiles["anthropic:default"]).toEqual({
+      type: "api_key",
+      provider: "anthropic",
+      key: "sk-ant-keep-me",
+    });
   });
 
   it("does not write auth refs into incomplete pre-onboarding config", () => {
